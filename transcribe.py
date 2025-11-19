@@ -21,7 +21,7 @@ print('')
 
 # Load model
 print('Loading model...')
-model = WhisperModel('tiny', device='cpu', compute_type='int8')
+model = WhisperModel('base', device='cpu', compute_type='int8')
 
 print('')
 print('Ready! Speak naturally - transcription will flow continuously.')
