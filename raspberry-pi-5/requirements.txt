@@ -1,0 +1,15 @@
+# Voice Transcription Requirements
+# Python 3.13+
+
+# Audio processing
+soundfile==0.12.1
+scipy==1.11.4
+
+# Whisper model for transcription
+faster-whisper==1.0.3
+
+# System dependencies (install via apt):
+# - libasound2-dev (ALSA sound library)
+# - libportaudio2 (PortAudio)
+# - libsndfile1 (libsndfile for soundfile)
+# - python3-pyaudio (PyAudio for ALSA)
