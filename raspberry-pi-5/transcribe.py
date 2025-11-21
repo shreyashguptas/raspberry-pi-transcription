@@ -133,7 +133,8 @@ try:
 
         # Process audio
         audio, sr = sf.read(audio_file)
-        audio = audio[:, 0]  # Use LEFT channel only
+        # Mix both LEFT and RIGHT channels for stereo audio capture
+        audio = np.mean(audio, axis=1)  # Average both channels into mono
         audio = signal.resample(audio, int(len(audio) * 16000 / sr))
         
         # Check audio energy BEFORE applying gain
