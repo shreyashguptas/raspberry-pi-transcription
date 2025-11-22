@@ -91,16 +91,15 @@ sudo apt install -y \
 
 ## 4. Python Virtual Environment Setup
 
-### Create Project Directory
+### Navigate to Project Directory
 
 ```bash
-mkdir -p ~/voice_transcribe
-cd ~/voice_transcribe
+cd ~/sbc-audio-transcription/raspberry-pi-5
 ```
 
-### Copy Project Files
+### Verify Project Files
 
-Copy `transcribe.py` and `requirements.txt` to this directory.
+You should already have the project files in this directory (`transcribe.py` and `requirements.txt`).
 
 ### Create Virtual Environment
 
@@ -343,7 +342,7 @@ sudo usermod -a -G audio $USER
 
 ```bash
 # Ensure virtual environment is activated
-source ~/voice_transcribe/venv/bin/activate
+source ~/sbc-audio-transcription/raspberry-pi-5/venv/bin/activate
 
 # Reinstall dependencies
 pip install --force-reinstall -r requirements.txt
@@ -455,9 +454,9 @@ After=network.target sound.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/voice_transcribe
-ExecStart=/home/pi/voice_transcribe/venv/bin/python /home/pi/voice_transcribe/transcribe.py
+User=shreyash
+WorkingDirectory=/home/shreyash/sbc-audio-transcription/raspberry-pi-5
+ExecStart=/home/shreyash/sbc-audio-transcription/raspberry-pi-5/venv/bin/python /home/shreyash/sbc-audio-transcription/raspberry-pi-5/transcribe.py
 Restart=on-failure
 
 [Install]
@@ -477,7 +476,7 @@ sudo systemctl start voice-transcribe.service
 
 ```bash
 # Activate environment
-source ~/voice_transcribe/venv/bin/activate
+source ~/sbc-audio-transcription/raspberry-pi-5/venv/bin/activate
 
 # Run transcription (interactive mode)
 python transcribe.py

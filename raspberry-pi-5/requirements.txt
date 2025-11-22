@@ -24,3 +24,32 @@ simple-term-menu>=1.6.1
 # - gfortran (Fortran compiler for scipy)
 # - libopenblas-dev (Optimized BLAS library)
 # - liblapack-dev (Linear algebra package)
+
+# ============================================================================
+# HAILO AI HAT DEPENDENCIES (for transcribe-halo.py)
+# ============================================================================
+#
+# To use hardware-accelerated transcription with the Hailo AI HAT, you need:
+#
+# 1. HailoRT 4.20 or later (from Hailo Developer Zone)
+#    - Download from: https://hailo.ai/developer-zone/
+#    - Requires free registration
+#    - Install HailoRT with PCIe driver support
+#
+# 2. PyHailoRT (included with HailoRT installation)
+#    - On Raspberry Pi 5 with hailo-all package: inherits from system
+#    - Otherwise: install wheel from Hailo Developer Zone
+#
+# 3. Additional system dependencies for Hailo:
+#    sudo apt install -y ffmpeg libportaudio2 libsndfile1
+#
+# 4. Hailo Application Code Examples (for HEF models):
+#    git clone https://github.com/hailo-ai/Hailo-Application-Code-Examples.git
+#    cd Hailo-Application-Code-Examples/runtime/python/speech_recognition
+#    python3 setup.py
+#
+# Note: transcribe.py uses CPU-based faster-whisper (no Hailo required)
+#       transcribe-halo.py uses Hailo AI HAT (requires HailoRT + PyHailoRT)
+#
+# For detailed setup instructions, see: HAILO_SETUP.md
+# ============================================================================
