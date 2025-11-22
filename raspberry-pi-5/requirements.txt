@@ -29,27 +29,32 @@ simple-term-menu>=1.6.1
 # HAILO AI HAT DEPENDENCIES (for transcribe-halo.py)
 # ============================================================================
 #
-# To use hardware-accelerated transcription with the Hailo AI HAT, you need:
+# To use hardware-accelerated transcription with the Hailo AI HAT:
 #
-# 1. HailoRT 4.20 or later (from Hailo Developer Zone)
-#    - Download from: https://hailo.ai/developer-zone/
-#    - Requires free registration
-#    - Install HailoRT with PCIe driver support
+# 1. Install hailo-all package (includes HailoRT + PyHailoRT):
+#    sudo apt update && sudo apt full-upgrade -y
+#    sudo apt install -y hailo-all
+#    sudo reboot
 #
-# 2. PyHailoRT (included with HailoRT installation)
-#    - On Raspberry Pi 5 with hailo-all package: inherits from system
-#    - Otherwise: install wheel from Hailo Developer Zone
-#
-# 3. Additional system dependencies for Hailo:
-#    sudo apt install -y ffmpeg libportaudio2 libsndfile1
-#
-# 4. Hailo Application Code Examples (for HEF models):
+# 2. Clone and setup Hailo Application Code Examples (for HEF models):
+#    cd ~
 #    git clone https://github.com/hailo-ai/Hailo-Application-Code-Examples.git
-#    cd Hailo-Application-Code-Examples/runtime/python/speech_recognition
+#    cd Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition
 #    python3 setup.py
 #
-# Note: transcribe.py uses CPU-based faster-whisper (no Hailo required)
-#       transcribe-halo.py uses Hailo AI HAT (requires HailoRT + PyHailoRT)
+# 3. The setup.py script above downloads:
+#    - HEF model files (Whisper tiny & base for Hailo-8L)
+#    - Tokenization assets
+#    - Required dependencies (transformers, torch, sounddevice)
+#
+# 4. transcribe-halo.py automatically imports official Hailo modules:
+#    - HailoWhisperPipeline (inference)
+#    - Audio preprocessing and tokenization
+#    - No additional pip install needed
+#
+# Notes:
+#  - transcribe.py: CPU-based faster-whisper (no Hailo required)
+#  - transcribe-halo.py: Hailo AI HAT (requires hailo-all + setup.py)
 #
 # For detailed setup instructions, see: HAILO_SETUP.md
 # ============================================================================

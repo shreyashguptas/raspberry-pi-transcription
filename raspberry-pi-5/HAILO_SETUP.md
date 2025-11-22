@@ -1,57 +1,58 @@
-# Hailo AI HAT Setup Guide
+# Hailo AI HAT Setup Guide for Raspberry Pi 5
 
-This guide will help you set up the Hailo AI HAT for hardware-accelerated Whisper transcription on your Raspberry Pi 5.
-
-## 🚨 TROUBLESHOOTING "Unable to locate package hailo-all"?
-
-**Run this diagnostic script immediately:**
-
-```bash
-cd ~/sbc-audio-transcription/raspberry-pi-5
-./check_hailo_requirements.sh
-```
-
-This will identify exactly what's wrong and give you specific fix instructions.
+Complete guide to set up hardware-accelerated Whisper transcription using the Hailo AI HAT on Raspberry Pi 5.
 
 ---
 
-## Table of Contents
+## Quick Start
 
-1. [Hardware Requirements](#hardware-requirements)
-2. [System Prerequisites](#system-prerequisites)
-3. [Installing HailoRT](#installing-hailort)
-4. [Installing Hailo Application Code Examples](#installing-hailo-application-code-examples)
-5. [Verifying Installation](#verifying-installation)
-6. [Running transcribe-halo.py](#running-transcribe-halopy)
-7. [Troubleshooting](#troubleshooting)
-8. [Performance Comparison](#performance-comparison)
+```bash
+# 1. Install HailoRT
+sudo apt update && sudo apt full-upgrade -y
+sudo apt install -y hailo-all
+sudo reboot
+
+# 2. Verify installation
+lspci | grep Hailo
+hailortcli fw-control identify
+
+# 3. Clone and setup Hailo Application Code Examples
+cd ~
+git clone https://github.com/hailo-ai/Hailo-Application-Code-Examples.git
+cd Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition
+python3 setup.py
+
+# 4. Run transcription (from your project directory)
+cd ~/sbc-audio-transcription/raspberry-pi-5
+source venv/bin/activate
+python transcribe-halo.py
+```
 
 ---
 
 ## Hardware Requirements
 
-### What You Have
+### What You Need
 
-- **Raspberry Pi 5** (with M.2 HAT+)
-- **Hailo-8L AI Accelerator** (13 TOPS variant)
-- **INMP441 I2S Microphones** (dual microphone setup)
+- **Raspberry Pi 5** (4GB or 8GB recommended)
+- **Hailo AI HAT** (M.2 HAT+ with Hailo-8L accelerator)
+  - Hailo-8L variant: 13 TOPS
+  - Connects via M.2 M-Key slot
+- **2x INMP441 I2S Microphones** (already set up from transcribe.py)
+- **Power Supply**: Official Raspberry Pi 5 27W USB-C power supply recommended
+- **MicroSD Card**: 32GB+ with Raspberry Pi OS Bookworm 64-bit
 
-### Hardware Setup
+### Hardware Installation
 
-1. **Physical Installation:**
-   - Ensure the Raspberry Pi M.2 HAT is properly connected to your Pi 5
-   - Install the Hailo AI HAT on top of the M.2 HAT
-   - Verify all connections are secure
-
-2. **Verify Hardware Detection:**
+1. **Power off** your Raspberry Pi 5 completely
+2. **Install M.2 HAT+** on Raspberry Pi 5 GPIO header
+3. **Connect Hailo AI HAT** to M.2 M-Key slot on the HAT+
+4. **Secure with standoffs** to prevent movement
+5. **Power on** and verify detection:
    ```bash
-   # Check if Hailo device is detected via PCIe
    lspci | grep -i hailo
-   ```
-
-   You should see output similar to:
-   ```
-   0000:01:00.0 Co-processor: Hailo Technologies Ltd. Hailo-8 AI Processor
+   # Expected output:
+   # 0001:01:00.0 Co-processor: Hailo Technologies Ltd. Hailo-8 AI Processor (rev 01)
    ```
 
 ---
@@ -60,362 +61,197 @@ This will identify exactly what's wrong and give you specific fix instructions.
 
 ### Operating System
 
-- **Raspberry Pi OS** (Bookworm or later recommended)
-- **Python 3.10 or 3.11** (Python 3.13 may work but not officially tested with Hailo)
+**Required:** Raspberry Pi OS Bookworm (64-bit)
 
-Check your Python version:
 ```bash
-python3 --version
+# Check your OS version
+cat /etc/os-release
+
+# Should show:
+# VERSION_CODENAME=bookworm
+# Architecture must be: aarch64
 ```
 
-### Update System
+**Important:** Hailo packages are only available for **Debian 12 (Bookworm)**. If you're running Debian 13 (Trixie) or another version, you must reinstall with Bookworm.
 
+**Download:** https://www.raspberrypi.com/software/operating-systems/
+- Select: **Raspberry Pi OS Lite (64-bit)** or **Raspberry Pi OS with Desktop (64-bit)**
+- Both work equally well - Lite is recommended for headless/SSH use
+
+### Kernel Version
+
+**Recommended:** Kernel 6.6.31 or later
+
+```bash
+uname -r
+# Should show: 6.x.x or higher
+```
+
+If older:
 ```bash
 sudo apt update
-sudo apt upgrade -y
+sudo apt full-upgrade -y
+sudo reboot
 ```
 
-### Install System Dependencies
+### Architecture
+
+**Required:** 64-bit ARM (aarch64)
 
 ```bash
-sudo apt install -y \
-    python3-dev \
-    python3-pip \
-    python3-venv \
-    build-essential \
-    cmake \
-    ffmpeg \
-    libportaudio2 \
-    libasound2-dev \
-    libsndfile1 \
-    git
+uname -m
+# Must show: aarch64
 ```
+
+If you see `armv7l` or `arm64`, you're running 32-bit OS and must reinstall with 64-bit version.
 
 ---
 
 ## Installing HailoRT
 
-HailoRT is the runtime software required to communicate with the Hailo AI accelerator.
+### Installation
 
-**IMPORTANT NOTE (2025):** The old installation method using `hailo-ai.github.io` repository is obsolete and will return 404 errors. All Hailo packages are now included in the standard Raspberry Pi repository.
-
-### Pre-Installation Diagnostic (RECOMMENDED)
-
-**Run this diagnostic script first to check if your system is compatible:**
-
-```bash
-cd ~/sbc-audio-transcription/raspberry-pi-5
-chmod +x check_hailo_requirements.sh
-./check_hailo_requirements.sh
-```
-
-This will check:
-- ✅ OS version (must be Raspberry Pi OS Bookworm 64-bit)
-- ✅ Architecture (must be aarch64)
-- ✅ Kernel version (>= 6.6.31)
-- ✅ Repository configuration
-- ✅ Package availability
-- ✅ Hardware detection
-- ✅ Existing installation status
-
-The script will give you specific instructions based on your system configuration.
-
----
-
-### Quick Start (TL;DR)
-
-**BEFORE installing, run these diagnostic commands to check your system:**
+The **hailo-all** package includes everything you need:
+- HailoRT runtime library
+- Python bindings (python3-hailort)
+- Kernel driver (hailo-dkms)
+- Firmware tools
 
 ```bash
-# Check OS version (MUST be Raspberry Pi OS Bookworm 64-bit)
-cat /etc/os-release
-
-# Check architecture (MUST be aarch64)
-uname -m
-
-# Check repository configuration
-cat /etc/apt/sources.list.d/raspi.list
-```
-
-**Expected output:**
-- OS: `VERSION_CODENAME=bookworm` and `Debian GNU/Linux 12`
-- Architecture: `aarch64`
-- Repository: `deb http://archive.raspberrypi.com/debian/ bookworm main`
-
-**If all checks pass, install:**
-
-```bash
-sudo apt update
-sudo apt full-upgrade -y
-sudo reboot
-```
-
-After reboot:
-
-```bash
-sudo apt install -y hailo-all
-sudo reboot
-```
-
-**If you get "Unable to locate package hailo-all"**, see [Troubleshooting](#troubleshooting) section below.
-
----
-
-### Option 1: Using hailo-all Package (Recommended for Raspberry Pi 5)
-
-The easiest way to install HailoRT on Raspberry Pi 5. As of 2025, Hailo packages are included in the standard Raspberry Pi repository - no special configuration needed!
-
-**Prerequisites:**
-- 64-bit Raspberry Pi OS Bookworm (FULL version, not lite)
-- Kernel version > 6.6.31
-
-```bash
-# Update your system first
+# Update system
 sudo apt update
 sudo apt full-upgrade -y
 
-# Reboot after upgrade
-sudo reboot
-```
-
-After reboot:
-
-```bash
-# Install hailo-all package (includes HailoRT, drivers, and PyHailoRT)
+# Install Hailo packages
 sudo apt install -y hailo-all
 
-# Reboot to load kernel modules
+# Reboot to load kernel driver
 sudo reboot
 ```
 
-**What gets installed:**
-- HailoRT 4.20.0+ (runtime library)
-- hailo-dkms (kernel driver)
-- python3-hailort (Python bindings)
-- hailo-tappas-core (processing libraries)
-- All required dependencies
+### Verify Installation
 
-### Option 2: Manual Installation from Raspberry Pi Archive
-
-If the `hailo-all` package method doesn't work, you can download and install manually:
-
-**Download directly from Raspberry Pi archive:**
+After reboot, verify everything is working:
 
 ```bash
-# Download the latest hailo-all package
-wget http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/hailo-all_4.20.0_all.deb
+# 1. Check hardware detection
+lspci | grep -i hailo
+# Expected: "Hailo Technologies Ltd. Hailo-8 AI Processor"
 
-# Install it
-sudo apt install -y ./hailo-all_4.20.0_all.deb
-
-# Reboot to load kernel modules
-sudo reboot
-```
-
-**Verify Installation:**
-
-```bash
+# 2. Verify HailoRT
 hailortcli fw-control identify
+# Expected: Shows device info (Hailo-8L, firmware version, serial number)
+
+# 3. Check Python bindings
+python3 -c "from hailo_platform import HEF; print('PyHailoRT OK')"
+# Expected: "PyHailoRT OK"
+
+# 4. Verify kernel driver
+lsmod | grep hailo
+# Expected: Shows hailo_pci module loaded
 ```
 
-Expected output:
-```
-Executing on device: 0000:01:00.0
-Identifying board
-Control Protocol Version: 2
-Firmware Version: 4.XX.X (release)
-Logger Version: 0
-Board Name: Hailo-8
-Device Architecture: HAILO8L
-```
+**Troubleshooting:**
 
-### Option 3: Installation from Hailo Developer Zone
-
-For the absolute latest versions or if you need specific builds:
-
-1. **Register for Hailo Developer Zone:**
-   - Visit: https://hailo.ai/developer-zone/request-access/
-   - Create a free account
-   - Accept the terms and conditions
-
-2. **Download HailoRT:**
-   - Login at: https://hailo.ai/developer-zone/software-downloads/
-   - Navigate to: Product: Accelerators → Sub-package: HailoRT → OS: Linux
-   - Download: **HailoRT 4.20+** for ARM64
-   - Download the .deb package for your architecture
-
-3. **Install HailoRT:**
-   ```bash
-   sudo apt install -y ./hailort_*.deb
-   sudo reboot
-   ```
-
-### Installing PyHailoRT
-
-PyHailoRT is the Python interface to HailoRT.
-
-**If you installed `hailo-all` (Option 1 or 2):**
-- ✅ PyHailoRT (`python3-hailort`) is already installed system-wide as part of the package
-- ✅ Your virtual environment will automatically inherit it if created with `--system-site-packages`
-- ✅ No additional installation needed!
-
-**Verify it's installed:**
+If `hailortcli` command not found:
 ```bash
-dpkg -l | grep python3-hailort
+dpkg -l | grep hailort
+# Should show hailort and python3-hailort packages installed
 ```
 
-**Creating virtual environment with system packages access:**
+If no Hailo device detected:
 ```bash
-cd ~/sbc-audio-transcription/raspberry-pi-5
-python3 -m venv --system-site-packages venv
-source venv/bin/activate
-python3 -c "from hailo_platform import HEF, VDevice; print('PyHailoRT available!')"
-```
-
-**If you need to reinstall your venv with system packages:**
-```bash
-# Remove old venv
-rm -rf venv
-
-# Create new venv with system site packages
-python3 -m venv --system-site-packages venv
-source venv/bin/activate
-
-# Reinstall project dependencies
-pip install -r requirements.txt
+lspci  # Check if any PCIe devices are detected
+# Verify HAT is properly seated and Pi is powered adequately
 ```
 
 ---
 
-## Installing Hailo Application Code Examples
+## Setting Up Hailo Application Code Examples
 
-The Hailo Application Code Examples repository contains pre-compiled HEF (Hailo Executable Format) models and reference implementations.
+The official Hailo repository contains pre-trained Whisper models and inference code.
 
-### Clone the Repository
+### Clone Repository
 
 ```bash
 cd ~
 git clone https://github.com/hailo-ai/Hailo-Application-Code-Examples.git
-cd Hailo-Application-Code-Examples
+cd Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition
 ```
 
-### Set Up Whisper Models
+### Run Setup Script
+
+This downloads all Whisper HEF models and installs dependencies:
 
 ```bash
-# Navigate to the speech recognition example
-cd runtime/python/speech_recognition
-
-# Run the setup script to download HEF models
 python3 setup.py
 ```
 
-This will:
-- Create a virtual environment
-- Download pre-compiled Whisper HEF models (tiny and base)
-- Install required Python dependencies
+**What this does:**
+1. Creates virtual environment: `whisper_env/`
+2. Installs Python dependencies:
+   - `transformers` - For Whisper tokenizer
+   - `torch` - For audio preprocessing
+   - `sounddevice`, `scipy` - Audio processing
+3. Downloads HEF model files (~400MB total):
+   - Tiny model encoder + decoder (for Hailo-8L)
+   - Base model encoder + decoder (for Hailo-8L)
+   - Files stored in `app/hefs/h8l/` directory
+4. Downloads tokenization assets (~180MB)
 
-**Important:** The HEF models will be downloaded to:
-```
-~/Hailo-Application-Code-Examples/runtime/python/speech_recognition/resources/
-```
+**Time required:** 5-15 minutes depending on internet speed
 
-The `transcribe-halo.py` script will automatically search for models in this location.
-
-### Available Models
-
-After setup, you'll have:
-- **whisper_tiny_hailo8l.hef** (~75MB, fastest)
-- **whisper_base_hailo8l.hef** (~155MB, balanced)
-
----
-
-## Verifying Installation
-
-### 1. Check Hailo Device
+### Verify Setup
 
 ```bash
-# Verify device is detected
-lspci | grep -i hailo
+# Check HEF files were downloaded
+ls ~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition/app/hefs/h8l/
 
-# Get device information
-hailortcli fw-control identify
-
-# Check device status
-hailortcli run --help
+# Expected structure:
+# base/
+#   base-whisper-encoder-5s_h8l.hef
+#   base-whisper-decoder-fixed-sequence-matmul-split_h8l.hef
+# tiny/
+#   tiny-whisper-encoder-10s_15dB_h8l.hef
+#   tiny-whisper-decoder-fixed-sequence-matmul-split_h8l.hef
 ```
-
-### 2. Test PyHailoRT Import
-
-```bash
-# Activate your virtual environment
-source ~/sbc-audio-transcription/raspberry-pi-5/venv/bin/activate
-
-# Test import
-python3 -c "from hailo_platform import HEF, VDevice; print('PyHailoRT import successful!')"
-```
-
-If you see "PyHailoRT import successful!", you're ready to go!
-
-### 3. Test Official Hailo Whisper Example
-
-Before using `transcribe-halo.py`, test the official example:
-
-```bash
-cd ~/Hailo-Application-Code-Examples/runtime/python/speech_recognition
-
-# Activate their virtual environment
-source whisper_env/bin/activate
-
-# Run the example with your hardware
-python3 -m app.app_hailo_whisper --hw-arch hailo8l --variant tiny
-```
-
-Speak into your microphone. If you see transcribed text, Hailo is working!
 
 ---
 
 ## Running transcribe-halo.py
 
-Once everything is installed and verified, you can use the custom transcription script.
-
-### First Time Setup
+### Activate Your Project Environment
 
 ```bash
-# Navigate to your project directory
 cd ~/sbc-audio-transcription/raspberry-pi-5
-
-# Activate your virtual environment
 source venv/bin/activate
-
-# Ensure dependencies are installed
-pip install -r requirements.txt
 ```
 
 ### Run the Script
 
 ```bash
-python3 transcribe-halo.py
+python transcribe-halo.py
 ```
 
-### Interactive Configuration
+### Interactive Menu
 
-The script will present an interactive menu:
+You'll see an interactive menu to configure:
 
-1. **Select Preset:**
-   - Fastest (tiny model) - Recommended for real-time transcription
-   - Balanced (base model) - Better quality, slightly slower
-   - Custom - Configure all options
+1. **Preset Selection:**
+   - **Fastest** - Tiny model, 10s chunks (2-5x real-time speed)
+   - **Balanced** - Base model, 5s chunks (1.5-3x real-time) [Recommended]
+   - **Custom** - Configure all options manually
 
-2. **Configure Audio Processing:**
-   - Chunk duration (3-15 seconds)
+2. **Model Selection** (if Custom):
+   - `tiny` - Fastest, basic accuracy (39M parameters)
+   - `base` - Better accuracy, still fast (74M parameters)
+
+3. **Audio Processing** (if Custom):
    - Overlap duration (1-3 seconds)
-   - Microphone gain (10x-50x)
+   - Microphone gain (10-50x)
+   - Energy threshold
 
-3. **Start Transcription:**
-   - Speak naturally into your INMP441 microphones
-   - Press `Ctrl+C` to stop and see performance statistics
-
-### Example Session
+### Expected Output
 
 ```
 ======================================================================
@@ -423,40 +259,9 @@ The script will present an interactive menu:
   Hardware-accelerated speech-to-text on Hailo-8L
 ======================================================================
 
-Select Configuration Preset:
-→ Fastest (tiny model, 39M params) [Recommended for Pi 5]
-  Balanced (base model, 74M params) [Current]
-  Custom (configure all options)
-
-======================================================================
-  CONFIGURATION SUMMARY
-======================================================================
-
-HAILO HARDWARE SETTINGS:
-  Hardware Architecture: HAILO8L
-  Whisper Model Variant: tiny
-  HEF Model Path: ~/Hailo-Application-Code-Examples/.../whisper_tiny_hailo8l.hef
-
-AUDIO PROCESSING:
-  Chunk Duration: 7s
-  Overlap Duration: 2s
-  Microphone Gain: 30x
-  Min Audio Energy: 0.0002
-
-NOTE: Hailo handles VAD, beam search, and temperature internally
-======================================================================
-
-Start transcription with these settings?
-→ Yes, start transcription
-  No, reconfigure
-  Cancel
-
-======================================================================
-  LOADING HAILO MODEL
-======================================================================
-
-Loading tiny model for HAILO8L hardware...
-Hailo model loaded successfully!
+Loading base model on HAILO8L hardware...
+Encoder HEF: base-whisper-encoder-5s_h8l.hef
+Decoder HEF: base-whisper-decoder-fixed-sequence-matmul-split_h8l.hef
 
 ======================================================================
   TRANSCRIPTION ACTIVE (HAILO ACCELERATED)
@@ -465,413 +270,209 @@ Hailo model loaded successfully!
 Ready! Speak naturally - transcription will flow continuously.
 Press Ctrl+C to stop
 
-NOTE: This is using Hailo AI HAT hardware acceleration!
+NOTE: Using Hailo AI HAT with base model
 ----------------------------------------------------------------------
 
-Hello, this is a test of the Hailo AI transcription system...
+[Your transcription appears here in real-time]
 ```
 
----
+### Usage
 
-## Troubleshooting
+- **Speak naturally** into the INMP441 microphones
+- Transcription appears in **real-time** as you speak
+- **Ctrl+C** to stop and see performance statistics
 
-### Issue: "Unable to locate package hailo-all"
+### Performance Statistics
 
-**This is the most common issue.** Follow these steps in order:
-
-#### Step 1: Check Your System
-
-```bash
-# Check OS version
-cat /etc/os-release
-
-# Check architecture
-uname -m
-
-# Check kernel version
-uname -r
-```
-
-**Required:**
-- OS: Raspberry Pi OS Bookworm (Debian 12) - 64-bit
-- Architecture: `aarch64` (NOT `armv7l`)
-- Kernel: >= 6.6.31
-
-**If you have 32-bit OS (`armv7l`):** You MUST reinstall with 64-bit Raspberry Pi OS. Hailo requires 64-bit.
-
-**If you have Ubuntu or other OS:** Install Raspberry Pi OS Bookworm 64-bit instead.
-
-#### Step 2: Check Available Packages
-
-```bash
-# Search for hailo packages in your repositories
-apt-cache search hailo
-
-# Check if repository is accessible
-curl -I http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/
-```
-
-**If no hailo packages found:** Your repositories aren't configured correctly. Continue to Step 3.
-
-#### Step 3: Fix Repository Configuration
-
-```bash
-# Check current repository configuration
-cat /etc/apt/sources.list.d/raspi.list
-
-# If file doesn't exist or is incorrect, create it:
-echo "deb http://archive.raspberrypi.com/debian/ bookworm main" | sudo tee /etc/apt/sources.list.d/raspi.list
-
-# Update package lists
-sudo apt update
-
-# Try searching again
-apt-cache search hailo
-```
-
-#### Step 4: Manual Installation (If Package Still Not Found)
-
-If the package is truly not available in your repositories, download and install manually:
-
-```bash
-# Download the hailo-all package directly
-wget http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/hailo-all_4.20.0_all.deb
-
-# Check if download succeeded
-ls -lh hailo-all_4.20.0_all.deb
-
-# Install it
-sudo apt install -y ./hailo-all_4.20.0_all.deb
-
-# Reboot
-sudo reboot
-```
-
-**If wget fails (404 error):** The version might be different. Check available versions:
-
-```bash
-# List available versions
-curl http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/ 2>/dev/null | grep -o 'hailo-all_[0-9.]*_all.deb' | sort -V | tail -5
-```
-
-#### Step 5: Alternative - Install Core Components Separately
-
-If `hailo-all` metapackage isn't available, install components individually:
-
-```bash
-# Search for individual hailo packages
-apt-cache search hailort
-
-# Install core components
-sudo apt install -y hailort python3-hailort hailo-dkms
-
-# Reboot
-sudo reboot
-```
-
-#### Step 6: Check Raspberry Pi OS Version
-
-```bash
-# Check exact Raspberry Pi OS version
-cat /etc/rpi-issue
-```
-
-**If you're on an older Raspberry Pi OS:**
-- Consider updating to the latest Raspberry Pi OS Bookworm
-- Backup your data first
-- Download from: https://www.raspberrypi.com/software/operating-systems/
-
-#### Step 7: Last Resort - Hailo Developer Zone
-
-If all else fails, register and download from Hailo directly:
-
-1. Visit: https://hailo.ai/developer-zone/request-access/
-2. Register (free)
-3. Download HailoRT .deb for ARM64
-4. Install manually:
-   ```bash
-   sudo apt install -y ./hailort_*.deb
-   sudo reboot
-   ```
-
-### Issue: "Hailo Platform SDK Not Found"
-
-**Cause:** PyHailoRT is not installed or not accessible.
-
-**Solutions:**
-1. If using `hailo-all`, ensure your venv doesn't isolate system packages:
-   ```bash
-   cd ~/sbc-audio-transcription/raspberry-pi-5
-   python3 -m venv --system-site-packages venv
-   source venv/bin/activate
-   ```
-
-2. Verify python3-hailort is installed:
-   ```bash
-   dpkg -l | grep hailort
-   ```
-
-3. Check installation:
-   ```bash
-   python3 -c "import hailo_platform; print(hailo_platform.__file__)"
-   ```
-   Should output something like: `/usr/lib/python3/dist-packages/hailo_platform/__init__.py`
-
-### Issue: "HEF file not found"
-
-**Cause:** Whisper HEF models not downloaded or not in expected location.
-
-**Solutions:**
-1. Run the Hailo setup script:
-   ```bash
-   cd ~/Hailo-Application-Code-Examples/runtime/python/speech_recognition
-   python3 setup.py
-   ```
-
-2. Verify models exist:
-   ```bash
-   ls -lh ~/Hailo-Application-Code-Examples/runtime/python/speech_recognition/resources/*.hef
-   ```
-
-3. Manually specify HEF path in the script if needed.
-
-### Issue: "Device not detected" (lspci shows nothing)
-
-**Cause:** Hailo hardware not properly connected or driver not loaded.
-
-**Solutions:**
-1. Check physical connections:
-   - Reseat the Hailo AI HAT
-   - Ensure M.2 HAT is properly connected to Pi 5
-
-2. Verify PCIe is enabled:
-   ```bash
-   # Check boot config
-   grep pcie /boot/config.txt
-
-   # Should see: dtparam=pciex1
-   ```
-
-3. Reload driver:
-   ```bash
-   sudo modprobe hailo_pci
-   lsmod | grep hailo
-   ```
-
-4. Reboot and try again:
-   ```bash
-   sudo reboot
-   ```
-
-### Issue: "Recording failed" or "Audio device not found"
-
-**Cause:** INMP441 microphones not properly configured.
-
-**Solutions:**
-1. Verify I2S is enabled:
-   ```bash
-   dtparam i2s
-   ```
-
-2. Check audio devices:
-   ```bash
-   arecord -l
-   ```
-
-3. Test recording manually:
-   ```bash
-   arecord -D plughw:0,0 -f S16_LE -r 48000 -c 2 -d 3 test.wav
-   aplay test.wav
-   ```
-
-4. See `PINOUT.md` for microphone wiring details.
-
-### Issue: Slow or No Transcription Output
-
-**Cause:** Model may not be running on Hailo hardware.
-
-**Solutions:**
-1. Check Hailo is being used:
-   ```bash
-   # Monitor Hailo temperature (indicates activity)
-   watch -n 1 hailortcli fw-control temp-info
-   ```
-
-2. Verify HEF file is for correct hardware:
-   - File should contain `hailo8l` in the name
-   - Not `hailo8` or `hailo10h`
-
-3. Check system resources:
-   ```bash
-   htop  # CPU should be low if Hailo is doing the work
-   ```
-
-### Issue: "ImportError: cannot import name 'HEF'"
-
-**Cause:** Old version of PyHailoRT or incorrect import.
-
-**Solutions:**
-1. Update HailoRT and PyHailoRT to 4.20+
-
-2. Check import syntax:
-   ```python
-   from hailo_platform import HEF, VDevice
-   # Not: import hailo
-   ```
-
-3. Verify version:
-   ```bash
-   pip show hailort
-   hailortcli --version
-   ```
-
----
-
-## Performance Comparison
-
-### Expected Performance
-
-| Configuration | Model | Hardware | Speed Factor | Notes |
-|--------------|-------|----------|--------------|-------|
-| transcribe.py | tiny | Pi 5 CPU | ~0.8-1.2x | CPU-bound, good baseline |
-| transcribe.py | base | Pi 5 CPU | ~0.5-0.8x | Slower but better quality |
-| transcribe-halo.py | tiny | Hailo-8L | ~3-5x | Hardware accelerated |
-| transcribe-halo.py | base | Hailo-8L | ~2-3x | Best quality with acceleration |
-
-**Speed Factor**: Ratio of audio processed to real-time (higher is better)
-- 1x = real-time (7 seconds audio processed in 7 seconds)
-- 2x = twice real-time (7 seconds audio processed in 3.5 seconds)
-- 0.5x = half real-time (7 seconds audio processed in 14 seconds)
-
-### Measuring Performance
-
-Both scripts display performance statistics when you press `Ctrl+C`:
+When you stop (Ctrl+C), you'll see:
 
 ```
 ======================================================================
   PERFORMANCE STATISTICS
 ======================================================================
 
-Configuration: Hailo HAILO8L, tiny model
-Total Runtime: 120.5s
-Total Audio Processed: 350.0s
-Total Words Transcribed: 1247
-Speed Factor: 2.90x real-time
+Configuration: Hailo HAILO8L, base model
+Total Runtime: 60.5s
+Total Audio Processed: 105.0s
+Total Words Transcribed: 234
+Speed Factor: 1.74x real-time
 
+======================================================================
+Transcription stopped
 ======================================================================
 ```
 
-### Tips for Optimal Performance
+**Speed Factor explained:**
+- **< 1.0x** = Slower than real-time (falling behind)
+- **= 1.0x** = Exactly real-time
+- **> 1.0x** = Faster than real-time (can handle continuous speech)
 
-1. **Use tiny model for real-time:** Best speed-to-quality ratio on Hailo-8L
+---
 
-2. **Adjust chunk duration:**
-   - Shorter (3-5s) = lower latency, less context
-   - Longer (10-15s) = better context, higher latency
+## Performance Notes
 
-3. **Monitor system temperature:**
-   ```bash
-   vcgencmd measure_temp  # Pi 5 CPU
-   hailortcli fw-control temp-info  # Hailo accelerator
-   ```
+### Expected Performance (Hailo-8L)
 
-4. **Optimize overlap:**
-   - 2 seconds overlap is balanced
-   - Less overlap = faster but may miss words at boundaries
+| Model | Chunk Size | Expected Speed | Accuracy | Best For |
+|-------|-----------|----------------|----------|----------|
+| `tiny` | 10 seconds | 2-5x real-time | Basic | Maximum speed |
+| `base` | 5 seconds | 1.5-3x real-time | Good | Balanced (recommended) |
+
+### Factors Affecting Performance
+
+1. **Model size**: Tiny is faster, base is more accurate
+2. **Chunk duration**: Longer chunks = more context but higher latency
+3. **Background noise**: Clean audio = better accuracy
+4. **CPU usage**: Preprocessing still runs on CPU (torch)
+5. **Power supply**: Inadequate power can throttle Hailo accelerator
+
+### Monitoring Hailo
+
+```bash
+# Check Hailo temperature
+watch -n 1 hailortcli fw-control temp-info
+
+# Monitor Hailo in top
+htop
+# Look for hailort process - CPU usage should be LOW (most work on Hailo)
+```
+
+### Current Limitations
+
+- **English only**: Current HEF models support English language only
+- **Torch dependency**: Audio preprocessing requires PyTorch (will be removed in future Hailo updates)
+- **Two models**: Only tiny and base variants available (no small/medium/large)
+- **Fixed chunk sizes**: Tiny uses 10s, base uses 5s (determined by HEF compilation)
+
+---
+
+## How It Works
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    transcribe-halo.py                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  [INMP441 Mics] → [arecord 48kHz stereo]                       │
+│         ↓                                                       │
+│  [Mix channels, resample to 16kHz, apply gain]                 │
+│         ↓                                                       │
+│  [Official Hailo Preprocessing]                                │
+│         ↓                                                       │
+│  [Generate Mel Spectrogram - 80 bins]                          │
+│         ↓                                                       │
+│  ┌─────────────────────────────────────┐                       │
+│  │   Hailo-8L AI Accelerator (PCIe)    │                       │
+│  │                                      │                       │
+│  │  Encoder HEF → Decoder HEF           │                       │
+│  │     (Hardware acceleration)          │                       │
+│  └─────────────────────────────────────┘                       │
+│         ↓                                                       │
+│  [Tokenizer - Decode to text]                                  │
+│         ↓                                                       │
+│  [Postprocessing - Remove repetitions]                         │
+│         ↓                                                       │
+│  [Deduplication - Handle overlaps]                             │
+│         ↓                                                       │
+│  [Display real-time transcription]                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+1. **Your code** (transcribe-halo.py):
+   - Interactive menu system
+   - INMP441 microphone recording (48kHz stereo)
+   - Audio preprocessing (mixing, resampling, gain)
+   - Deduplication logic for overlapping chunks
+   - Performance tracking
+
+2. **Official Hailo code** (imported):
+   - `HailoWhisperPipeline` - Manages Hailo inference
+   - Mel spectrogram generation (Whisper-specific)
+   - Tokenization (Whisper tokenizer from transformers)
+   - Post-processing (repetition removal, text cleaning)
+
+3. **Hailo hardware**:
+   - Encoder and decoder run on Hailo-8L accelerator
+   - PCIe interface for low latency
+   - ~10W power consumption during inference
+
+---
+
+## Comparison: CPU vs Hailo
+
+| Feature | transcribe.py (CPU) | transcribe-halo.py (Hailo) |
+|---------|-------------------|--------------------------|
+| **Hardware** | Raspberry Pi 5 CPU | Hailo-8L accelerator |
+| **Models** | All sizes (tiny → large-v3) | tiny, base only |
+| **Languages** | 100+ languages | English only (current) |
+| **Speed (base)** | 1-2x real-time | 1.5-3x real-time |
+| **Power** | ~8-12W | ~15-18W (CPU + Hailo) |
+| **Setup** | pip install | Requires hailo-all + setup |
+| **Flexibility** | Highly configurable | Fixed models |
+
+**When to use each:**
+
+- **Use transcribe.py (CPU):**
+  - Need multilingual support
+  - Want larger models (small/medium/large)
+  - Prefer maximum flexibility
+  - Don't have Hailo HAT
+
+- **Use transcribe-halo.py (Hailo):**
+  - English-only transcription
+  - Need maximum speed
+  - Have Hailo HAT installed
+  - Want to offload CPU
+
+---
+
+## File Locations Reference
+
+| Description | Path |
+|------------|------|
+| **Your project** | `~/sbc-audio-transcription/raspberry-pi-5/` |
+| **transcribe-halo.py** | `~/sbc-audio-transcription/raspberry-pi-5/transcribe-halo.py` |
+| **Hailo repo** | `~/Hailo-Application-Code-Examples/` |
+| **Whisper code** | `~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition/` |
+| **HEF models** | `~/Hailo-Application-Code-Examples/.../app/hefs/h8l/base/` |
+| **Tokenization assets** | `~/Hailo-Application-Code-Examples/.../app/decoder_assets/base/` |
 
 ---
 
 ## Additional Resources
 
-### Official Documentation
+### Documentation
 
 - **Hailo Developer Zone:** https://hailo.ai/developer-zone/
-- **HailoRT Documentation:** https://github.com/hailo-ai/hailort
-- **Application Code Examples:** https://github.com/hailo-ai/Hailo-Application-Code-Examples
-- **Community Forum:** https://community.hailo.ai/
+- **Hailo Community:** https://community.hailo.ai/
+- **Official Examples:** https://github.com/hailo-ai/Hailo-Application-Code-Examples
 
-### Related Projects
+### Useful Commands
 
-- **Wyoming Protocol Integration:** https://github.com/mpeex/wyoming-hailo-whisper
-- **FastAPI Server:** https://github.com/CStrue/raspberrypi5-hailo8L-whisper-server
-- **Hailo RPi5 Examples:** https://github.com/hailo-ai/hailo-rpi5-examples
+```bash
+# Check Hailo status
+hailortcli fw-control identify
 
-### Model Information
+# Monitor temperature
+hailortcli fw-control temp-info
 
-- **OpenAI Whisper:** https://github.com/openai/whisper
-- **Whisper Model Card:** https://github.com/openai/whisper/blob/main/model-card.md
-- **Faster-Whisper:** https://github.com/SYSTRAN/faster-whisper
+# List all Hailo packages
+dpkg -l | grep hailo
 
----
+# Test audio recording
+arecord -D plughw:0,0 -f S16_LE -r 48000 -c 2 -d 3 test.wav && aplay test.wav
 
-## Comparison: transcribe.py vs transcribe-halo.py
-
-### When to Use transcribe.py (CPU-based)
-
-**Pros:**
-- No additional hardware required
-- Supports all Whisper model sizes (tiny to large-v3)
-- Full control over VAD parameters
-- Multi-language support
-- More mature and tested
-
-**Cons:**
-- Slower, CPU-bound
-- May not achieve real-time on larger models
-- Higher CPU usage and heat
-
-**Best for:**
-- Testing and development
-- Offline transcription of audio files
-- Multi-language transcription
-- Maximum quality with large models
-
-### When to Use transcribe-halo.py (Hailo-accelerated)
-
-**Pros:**
-- Hardware acceleration on Hailo-8L
-- Much faster (2-5x speed improvement)
-- Lower CPU usage
-- Real-time transcription capability
-- Optimized for edge deployment
-
-**Cons:**
-- Requires Hailo AI HAT hardware
-- English language only (currently)
-- Limited to tiny and base models
-- Less control over transcription parameters
-- Newer, less tested
-
-**Best for:**
-- Real-time transcription
-- Production deployment on Pi 5
-- Energy-efficient continuous operation
-- English-only applications
+# Check I2S microphones
+arecord -l
+```
 
 ---
 
-## Next Steps
-
-1. **Test both scripts** and compare performance for your use case
-2. **Experiment with configurations** to find optimal settings
-3. **Monitor temperature** during extended use
-4. **Consider use case:**
-   - Development/testing → `transcribe.py`
-   - Production/real-time → `transcribe-halo.py`
-
----
-
-## Support
-
-If you encounter issues:
-
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Verify all prerequisites are met
-3. Test with the official Hailo examples first
-4. Check Hailo Community Forum for known issues
-5. Review project documentation and pinout guides
-
----
-
-**Last Updated:** 2025-01-21
-**Hailo-8L (13 TOPS)** on **Raspberry Pi 5**
+**Last Updated:** 2025-11-22
+**Raspberry Pi:** Pi 5
+**Hailo HAT:** Hailo-8L (13 TOPS)
+**Models:** tiny, base (English only)

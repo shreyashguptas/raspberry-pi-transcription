@@ -2,6 +2,9 @@
 """
 Interactive Hailo AI HAT Whisper Transcription Tool
 Hardware-accelerated speech-to-text using Hailo-8L accelerator
+
+This script uses the official Hailo Whisper implementation for maximum
+performance and accuracy while maintaining our custom UI and recording pipeline.
 """
 
 import subprocess
@@ -13,36 +16,49 @@ import sys
 import re
 import os
 import time
-import glob
 
-# Hailo imports
+# Add Hailo official code to Python path
+HAILO_PATH = os.path.expanduser(
+    "~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition"
+)
+if os.path.exists(HAILO_PATH):
+    sys.path.insert(0, HAILO_PATH)
+else:
+    print(f"\n❌ Error: Hailo Application Code Examples not found at: {HAILO_PATH}")
+    print("\nPlease run:")
+    print("  cd ~")
+    print("  git clone https://github.com/hailo-ai/Hailo-Application-Code-Examples.git")
+    print("  cd Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition")
+    print("  python3 setup.py")
+    print("\nSee HAILO_SETUP.md for details.")
+    sys.exit(1)
+
+# Import official Hailo modules
 try:
-    from hailo_platform import (
-        HEF,
-        VDevice,
-        HailoStreamInterface,
-        InferVStreams,
-        ConfigureParams,
-        InputVStreamParams,
-        OutputVStreamParams,
-        FormatType
-    )
+    from app.hailo_whisper_pipeline import HailoWhisperPipeline
+    from app.whisper_hef_registry import HEF_REGISTRY
+    from common.audio_utils import SAMPLE_RATE
+    from common.postprocessing import clean_transcription
     HAILO_AVAILABLE = True
-except ImportError:
-    HAILO_AVAILABLE = False
-    print("Warning: Hailo Platform SDK not found. Please install HailoRT and PyHailoRT.")
+except ImportError as e:
+    print(f"\n❌ Error importing Hailo modules: {e}")
+    print("\nPlease ensure you've run setup.py in the Hailo repository:")
+    print("  cd ~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition")
+    print("  python3 setup.py")
+    print("\nThis will install all required dependencies.")
+    sys.exit(1)
+
 
 class HailoTranscriptionConfig:
     """Configuration for Hailo-based transcription parameters"""
 
     def __init__(self):
         # Hailo hardware settings
-        self.hw_arch = 'hailo8l'  # hailo8l or hailo8
+        self.hw_arch = 'hailo8l'  # hailo8l for Raspberry Pi 5
         self.model_variant = 'base'  # tiny or base
-        self.hef_path = None  # Will be auto-detected
 
         # Audio processing (kept from original)
-        self.chunk_duration = 7
+        self.chunk_duration = 5  # Base model works best with 5s chunks
         self.overlap_duration = 2
         self.gain = 30.0
         self.min_audio_energy = 0.0002
@@ -62,7 +78,7 @@ class HailoTranscriptionConfig:
         print('HAILO HARDWARE SETTINGS:')
         print(f'  Hardware Architecture: {self.hw_arch.upper()}')
         print(f'  Whisper Model Variant: {self.model_variant}')
-        print(f'  HEF Model Path: {self.hef_path or "Auto-detect"}')
+        print(f'  Expected Chunk Duration: {self.chunk_duration}s')
         print('')
         print('AUDIO PROCESSING:')
         print(f'  Chunk Duration: {self.chunk_duration}s')
@@ -70,9 +86,10 @@ class HailoTranscriptionConfig:
         print(f'  Microphone Gain: {self.gain}x')
         print(f'  Min Audio Energy: {self.min_audio_energy}')
         print('')
-        print('NOTE: Hailo handles VAD, beam search, and temperature internally')
+        print('NOTE: Using official Hailo implementation for optimal performance')
         print('='*70)
         print('')
+
 
 def show_welcome():
     """Display welcome screen"""
@@ -83,11 +100,12 @@ def show_welcome():
     print('='*70)
     print('')
 
+
 def menu_preset(config):
     """Show preset configuration menu"""
     options = [
-        "Fastest (tiny model, 39M params) [Recommended for Pi 5]",
-        "Balanced (base model, 74M params) [Current]",
+        "Fastest (tiny model, 39M params, 10s chunks)",
+        "Balanced (base model, 74M params, 5s chunks) [Recommended]",
         "Custom (configure all options)"
     ]
 
@@ -103,18 +121,21 @@ def menu_preset(config):
 
     if choice == 0:  # Fastest
         config.model_variant = 'tiny'
+        config.chunk_duration = 10  # Tiny model uses 10s chunks
         return False  # Skip custom menus
     elif choice == 1:  # Balanced (default)
         config.model_variant = 'base'
+        config.chunk_duration = 5  # Base model uses 5s chunks
         return False
     else:  # Custom
         return True
 
+
 def menu_model_variant(config):
     """Model variant selection menu"""
     options = [
-        "tiny (fastest, 39M parameters, ~75MB)",
-        "base (balanced, 74M parameters, ~155MB) [Recommended]"
+        "tiny (fastest, 39M parameters, 10s chunks)",
+        "base (balanced, 74M parameters, 5s chunks) [Recommended]"
     ]
 
     variant_map = ['tiny', 'base']
@@ -132,30 +153,12 @@ def menu_model_variant(config):
     choice = menu.show()
     config.model_variant = variant_map[choice]
 
+    # Set chunk duration based on model
+    config.chunk_duration = 10 if config.model_variant == 'tiny' else 5
+
+
 def menu_audio_processing(config):
     """Audio processing configuration menu"""
-    # Chunk Duration
-    chunk_options = [
-        "3 seconds (low latency, less context)",
-        "5 seconds (balanced)",
-        "7 seconds (good context) [Current]",
-        "10 seconds (more context)",
-        "15 seconds (maximum context, high latency)"
-    ]
-    chunk_map = [3, 5, 7, 10, 15]
-
-    menu = TerminalMenu(
-        chunk_options,
-        title="Select Chunk Duration:",
-        cursor_index=2,
-        menu_cursor="→ ",
-        menu_cursor_style=("fg_cyan", "bold"),
-        menu_highlight_style=("bg_cyan", "fg_black")
-    )
-
-    choice = menu.show()
-    config.chunk_duration = chunk_map[choice]
-
     # Overlap Duration
     overlap_options = [
         "1 second (minimal overlap)",
@@ -198,6 +201,7 @@ def menu_audio_processing(config):
     choice = menu.show()
     config.gain = gain_map[choice]
 
+
 def menu_advanced(config):
     """Advanced settings menu"""
     options = [
@@ -237,6 +241,7 @@ def menu_advanced(config):
 
         choice = menu.show()
         config.min_audio_energy = energy_map[choice]
+
 
 def configure_transcription():
     """Main configuration workflow"""
@@ -280,6 +285,7 @@ def configure_transcription():
         print("\nConfiguration cancelled.")
         sys.exit(0)
 
+
 # Utility functions (from original code)
 
 def is_repetition(new_text, previous_text, threshold=0.7):
@@ -301,6 +307,7 @@ def is_repetition(new_text, previous_text, threshold=0.7):
 
     return similarity > threshold
 
+
 def remove_overlap(new_text, previous_words, overlap_words):
     """Remove overlapping words from the beginning of new_text"""
     if not previous_words or not new_text:
@@ -320,11 +327,13 @@ def remove_overlap(new_text, previous_words, overlap_words):
 
     return ' '.join(new_words)
 
+
 def has_sufficient_audio(audio_data, threshold):
     """Check if audio has sufficient energy to likely contain speech"""
     rms = np.sqrt(np.mean(audio_data**2))
     max_amp = np.max(np.abs(audio_data))
     return rms > threshold or max_amp > threshold * 3
+
 
 def normalize_whitespace(text):
     """Normalize whitespace in text"""
@@ -332,250 +341,77 @@ def normalize_whitespace(text):
     text = text.strip()
     return text
 
-def find_hef_file(config):
+
+def get_hef_paths(config):
     """
-    Find the appropriate HEF file for the selected model variant and hardware architecture.
+    Get HEF file paths from official Hailo registry.
 
-    Looks in common locations:
-    1. Current directory
-    2. ~/Hailo-Application-Code-Examples/runtime/python/speech_recognition/resources/
-    3. ~/hailo_models/
-    4. /usr/share/hailo/models/
+    Returns:
+        tuple: (encoder_path, decoder_path)
     """
-    search_paths = [
-        os.getcwd(),
-        os.path.expanduser('~/Hailo-Application-Code-Examples/runtime/python/speech_recognition/resources/'),
-        os.path.expanduser('~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition/resources/'),
-        os.path.expanduser('~/hailo_models/'),
-        '/usr/share/hailo/models/',
-        '/usr/local/share/hailo/models/'
-    ]
+    try:
+        # Get paths from official registry
+        encoder_rel = HEF_REGISTRY[config.model_variant][config.hw_arch]["encoder"]
+        decoder_rel = HEF_REGISTRY[config.model_variant][config.hw_arch]["decoder"]
 
-    # Build filename pattern
-    pattern = f"whisper_{config.model_variant}*{config.hw_arch}*.hef"
+        # Convert to absolute paths
+        encoder_path = os.path.join(HAILO_PATH, encoder_rel)
+        decoder_path = os.path.join(HAILO_PATH, decoder_rel)
 
-    print(f"Searching for HEF file matching: {pattern}")
+        # Verify files exist
+        if not os.path.exists(encoder_path):
+            raise FileNotFoundError(f"Encoder HEF not found: {encoder_path}")
+        if not os.path.exists(decoder_path):
+            raise FileNotFoundError(f"Decoder HEF not found: {decoder_path}")
 
-    for search_path in search_paths:
-        if os.path.exists(search_path):
-            full_pattern = os.path.join(search_path, pattern)
-            matches = glob.glob(full_pattern)
-            if matches:
-                hef_path = matches[0]
-                print(f"Found HEF file: {hef_path}")
-                return hef_path
+        return encoder_path, decoder_path
 
-    # If not found, provide helpful error message
-    print("\nError: HEF file not found!")
-    print(f"Searched for: {pattern}")
-    print("\nSearched in:")
-    for path in search_paths:
-        print(f"  - {path}")
-    print("\nPlease ensure you have:")
-    print("1. Cloned Hailo-Application-Code-Examples repository")
-    print("2. Run the setup script to download HEF models")
-    print("3. Or manually download HEF files to one of the search paths")
-    print("\nSetup instructions:")
-    print("  git clone https://github.com/hailo-ai/Hailo-Application-Code-Examples.git")
-    print("  cd Hailo-Application-Code-Examples/runtime/python/speech_recognition")
-    print("  python3 setup.py")
-    sys.exit(1)
+    except KeyError as e:
+        print(f"\n❌ Error: Model '{config.model_variant}' not available for hardware '{config.hw_arch}'")
+        print("\nAvailable combinations:")
+        for model in HEF_REGISTRY.keys():
+            for hw in HEF_REGISTRY[model].keys():
+                print(f"  - Model: {model}, Hardware: {hw}")
+        sys.exit(1)
+    except FileNotFoundError as e:
+        print(f"\n❌ Error: {e}")
+        print("\nPlease run setup.py to download HEF models:")
+        print("  cd ~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition")
+        print("  python3 setup.py")
+        sys.exit(1)
 
-class HailoWhisperInference:
+
+def preprocess_audio_for_hailo(audio_file, config):
     """
-    Hailo Whisper inference wrapper.
+    Preprocess audio file for Hailo inference.
+    Converts our recorded audio to the format expected by Hailo Whisper.
 
-    This class handles loading the HEF model and running inference on the Hailo accelerator.
-    Based on the official Hailo Application Code Examples.
+    Args:
+        audio_file: Path to WAV file (48kHz stereo from INMP441)
+        config: Configuration object
+
+    Returns:
+        numpy array: Preprocessed audio at 16kHz mono, float32 [-1, 1]
     """
+    # Load audio
+    audio, sr = sf.read(audio_file)
 
-    def __init__(self, hef_path):
-        """Initialize Hailo inference with HEF model"""
-        if not HAILO_AVAILABLE:
-            print("\nError: Hailo Platform SDK not available!")
-            print("Please install HailoRT and PyHailoRT from Hailo Developer Zone")
-            print("Visit: https://hailo.ai/developer-zone/")
-            sys.exit(1)
+    # Mix both LEFT and RIGHT channels for stereo audio capture
+    if len(audio.shape) > 1:
+        audio = np.mean(audio, axis=1)
 
-        self.hef_path = hef_path
-        self.hef = None
-        self.vdevice = None
-        self.network_group = None
-        self.network_group_params = None
-        self.input_vstreams_params = None
-        self.output_vstreams_params = None
+    # Resample to 16kHz (Whisper requirement)
+    if sr != SAMPLE_RATE:
+        audio = signal.resample(audio, int(len(audio) * SAMPLE_RATE / sr))
 
-        print(f"Loading HEF model from: {hef_path}")
-        self._load_model()
+    # Apply gain
+    audio = audio * config.gain
 
-    def _load_model(self):
-        """Load HEF model and configure Hailo device"""
-        try:
-            # Load HEF
-            self.hef = HEF(self.hef_path)
+    # Clip to valid range
+    audio = np.clip(audio, -1.0, 1.0)
 
-            # Create VDevice (virtual device)
-            self.vdevice = VDevice()
+    return audio.astype(np.float32)
 
-            # Configure network group
-            configure_params = ConfigureParams.create_from_hef(
-                self.hef,
-                interface=HailoStreamInterface.PCIe
-            )
-
-            self.network_group = self.vdevice.configure(self.hef, configure_params)[0]
-            self.network_group_params = self.network_group.create_params()
-
-            # Get input/output stream parameters
-            self.input_vstreams_params = InputVStreamParams.make_from_network_group(
-                self.network_group,
-                quantized=False,
-                format_type=FormatType.FLOAT32
-            )
-
-            self.output_vstreams_params = OutputVStreamParams.make_from_network_group(
-                self.network_group,
-                quantized=False,
-                format_type=FormatType.FLOAT32
-            )
-
-            print("Hailo model loaded successfully!")
-
-        except Exception as e:
-            print(f"\nError loading Hailo model: {e}")
-            print("\nTroubleshooting:")
-            print("1. Verify HailoRT is installed: hailortcli fw-control identify")
-            print("2. Check Hailo device is detected: lspci | grep Hailo")
-            print("3. Ensure PyHailoRT is installed in your virtual environment")
-            print("4. Verify HEF file is compatible with your hardware")
-            sys.exit(1)
-
-    def transcribe_audio(self, audio_file):
-        """
-        Transcribe audio file using Hailo accelerator.
-
-        Args:
-            audio_file: Path to 16kHz WAV file
-
-        Returns:
-            Transcribed text string
-        """
-        try:
-            # Load and preprocess audio
-            audio_data, sample_rate = sf.read(audio_file)
-
-            if sample_rate != 16000:
-                print(f"Warning: Expected 16kHz audio, got {sample_rate}Hz")
-
-            # Convert to mel spectrogram features (Whisper preprocessing)
-            # This is a simplified version - full preprocessing would match Whisper's exact pipeline
-            audio_features = self._preprocess_audio(audio_data, sample_rate)
-
-            # Run inference on Hailo
-            with InferVStreams(
-                self.network_group,
-                self.input_vstreams_params,
-                self.output_vstreams_params
-            ) as infer_pipeline:
-
-                # Send audio features to Hailo
-                input_data = {list(infer_pipeline.input_vstreams.keys())[0]: audio_features}
-
-                # Get output from Hailo
-                output = infer_pipeline.infer(input_data)
-
-                # Post-process output to get text
-                text = self._postprocess_output(output)
-
-                return text
-
-        except Exception as e:
-            print(f"\nError during Hailo inference: {e}")
-            return ""
-
-    def _preprocess_audio(self, audio_data, sample_rate):
-        """
-        Preprocess audio to match Whisper's expected input format.
-
-        This is a simplified preprocessing. For production use, you should use
-        the exact preprocessing pipeline from the Hailo Application Code Examples.
-        """
-        # Ensure mono audio
-        if len(audio_data.shape) > 1:
-            audio_data = np.mean(audio_data, axis=1)
-
-        # Pad or trim to 30 seconds (480,000 samples at 16kHz)
-        target_length = 480000
-        if len(audio_data) > target_length:
-            audio_data = audio_data[:target_length]
-        else:
-            audio_data = np.pad(audio_data, (0, target_length - len(audio_data)))
-
-        # Convert to mel spectrogram (80 mel bins, Whisper standard)
-        # This is a placeholder - use the exact preprocessing from Hailo examples
-        mel_spectrogram = self._compute_mel_spectrogram(audio_data, sample_rate)
-
-        return mel_spectrogram
-
-    def _compute_mel_spectrogram(self, audio, sample_rate):
-        """
-        Compute mel spectrogram for Whisper model.
-
-        This is a simplified version. For production, use the exact implementation
-        from the Hailo Application Code Examples which matches OpenAI's preprocessing.
-        """
-        # Placeholder implementation
-        # In production, this should match Whisper's exact mel filterbank
-        n_fft = 400
-        hop_length = 160
-        n_mels = 80
-
-        # Compute spectrogram
-        from scipy.signal import stft
-        f, t, Zxx = stft(audio, fs=sample_rate, nperseg=n_fft, noverlap=n_fft-hop_length)
-
-        # Convert to power spectrogram
-        power_spec = np.abs(Zxx) ** 2
-
-        # Apply mel filterbank (simplified)
-        mel_spec = power_spec[:n_mels, :]
-
-        # Log scale
-        mel_spec = np.log10(mel_spec + 1e-10)
-
-        return mel_spec.astype(np.float32)
-
-    def _postprocess_output(self, output):
-        """
-        Post-process Hailo output to extract transcribed text.
-
-        This is a simplified version. For production, use the exact implementation
-        from the Hailo Application Code Examples which includes:
-        - Token decoding
-        - Repeated token penalty
-        - Hallucination removal
-        """
-        # Placeholder implementation
-        # In production, this should decode the output tokens using Whisper's tokenizer
-
-        # Get output tensor
-        output_key = list(output.keys())[0]
-        output_tensor = output[output_key]
-
-        # Decode tokens (simplified)
-        # In production, use the Whisper tokenizer from the Hailo examples
-        text = "[Transcribed text - full token decoding not implemented]"
-
-        return text
-
-    def cleanup(self):
-        """Clean up Hailo resources"""
-        if self.network_group:
-            self.network_group = None
-        if self.vdevice:
-            self.vdevice = None
-        if self.hef:
-            self.hef = None
 
 def run_transcription(config):
     """Run transcription with configured parameters"""
@@ -586,12 +422,30 @@ def run_transcription(config):
     print('='*70)
     print('')
 
-    # Find HEF file
-    config.hef_path = find_hef_file(config)
+    # Get HEF file paths
+    encoder_path, decoder_path = get_hef_paths(config)
 
-    # Initialize Hailo inference
-    print(f'Loading {config.model_variant} model for {config.hw_arch.upper()} hardware...')
-    hailo_model = HailoWhisperInference(config.hef_path)
+    print(f'Encoder HEF: {os.path.basename(encoder_path)}')
+    print(f'Decoder HEF: {os.path.basename(decoder_path)}')
+    print('')
+
+    # Initialize Hailo Whisper pipeline
+    print(f'Loading {config.model_variant} model on {config.hw_arch.upper()} hardware...')
+
+    try:
+        pipeline = HailoWhisperPipeline(
+            encoder_model_path=encoder_path,
+            decoder_model_path=decoder_path,
+            variant=config.model_variant,
+            multi_process_service=False
+        )
+    except Exception as e:
+        print(f"\n❌ Error initializing Hailo pipeline: {e}")
+        print("\nTroubleshooting:")
+        print("1. Verify Hailo device is detected: lspci | grep Hailo")
+        print("2. Check HailoRT is working: hailortcli fw-control identify")
+        print("3. Ensure you have hailo-all installed: dpkg -l | grep hailo")
+        sys.exit(1)
 
     print('')
     print('='*70)
@@ -601,7 +455,7 @@ def run_transcription(config):
     print('Ready! Speak naturally - transcription will flow continuously.')
     print('Press Ctrl+C to stop')
     print('')
-    print('NOTE: This is using Hailo AI HAT hardware acceleration!')
+    print(f'NOTE: Using Hailo AI HAT with {config.model_variant} model')
     print('-' * 70)
     print('')
 
@@ -621,7 +475,7 @@ def run_transcription(config):
         while True:
             segment_num += 1
 
-            # Record
+            # Record audio from INMP441 microphones
             audio_file = f'/tmp/seg_{segment_num}.wav'
 
             result = subprocess.run(
@@ -634,42 +488,41 @@ def run_transcription(config):
 
             # Check if recording succeeded
             if result.returncode != 0:
-                print(f"\nError: Recording failed!")
+                print(f"\n❌ Error: Recording failed!")
                 print(f"arecord error: {result.stderr}")
                 print("\nTroubleshooting:")
                 print("1. Check if microphones are wired correctly (see PINOUT.md)")
                 print("2. Verify I2S is enabled: dtparam i2s")
                 print("3. Test audio device: arecord -l")
                 print("4. Try manual recording: arecord -D plughw:0,0 -f S16_LE -r 48000 -c 2 -d 3 test.wav")
+                pipeline.stop()
                 sys.exit(1)
 
             # Check if file exists and has content
             if not os.path.exists(audio_file):
-                print(f"\nError: Audio file was not created: {audio_file}")
-                print("The recording command succeeded but no file was created.")
+                print(f"\n❌ Error: Audio file was not created: {audio_file}")
+                pipeline.stop()
                 sys.exit(1)
 
             if os.path.getsize(audio_file) == 0:
-                print(f"\nError: Audio file is empty: {audio_file}")
-                print("Recording succeeded but no audio data was captured.")
+                print(f"\n❌ Error: Audio file is empty: {audio_file}")
+                pipeline.stop()
                 sys.exit(1)
 
-            # Process audio
+            # Preprocess audio for Hailo
             try:
-                audio, sr = sf.read(audio_file)
+                audio = preprocess_audio_for_hailo(audio_file, config)
             except Exception as e:
-                print(f"\nError reading audio file: {e}")
-                print(f"File: {audio_file}")
-                print(f"File size: {os.path.getsize(audio_file)} bytes")
-                sys.exit(1)
-
-            # Mix both LEFT and RIGHT channels for stereo audio capture
-            audio = np.mean(audio, axis=1)
-            audio = signal.resample(audio, int(len(audio) * 16000 / sr))
+                print(f"\n❌ Error preprocessing audio: {e}")
+                try:
+                    os.remove(audio_file)
+                except:
+                    pass
+                continue
 
             total_audio_duration += config.chunk_duration
 
-            # Check audio energy BEFORE applying gain
+            # Check audio energy BEFORE transcription
             if not has_sufficient_audio(audio, config.min_audio_energy):
                 try:
                     os.remove(audio_file)
@@ -677,15 +530,51 @@ def run_transcription(config):
                     pass
                 continue
 
-            audio = audio * config.gain
-            audio = np.clip(audio, -1.0, 1.0)
-
+            # Save preprocessed audio to temp file for Hailo
             proc_file = f'/tmp/proc_{segment_num}.wav'
-            sf.write(proc_file, audio, 16000)
+            sf.write(proc_file, audio, SAMPLE_RATE)
 
-            # Transcribe using Hailo
-            text = hailo_model.transcribe_audio(proc_file)
-            text = normalize_whitespace(text)
+            # Transcribe using Hailo pipeline
+            try:
+                # Load and preprocess with official Hailo utilities
+                from common.audio_utils import load_audio, pad_or_trim
+                from common.preprocessing import preprocess
+
+                # Load audio (official loader handles ffmpeg conversion)
+                audio_for_hailo = load_audio(proc_file)
+
+                # Generate mel spectrograms using official preprocessing
+                mel_spectrograms = preprocess(
+                    audio_for_hailo,
+                    is_nhwc=True,  # Hailo expects NHWC format
+                    chunk_length=config.chunk_duration,
+                    chunk_offset=0
+                )
+
+                # Process each mel spectrogram chunk
+                text_chunks = []
+                for mel in mel_spectrograms:
+                    pipeline.send_data(mel)
+                    time.sleep(0.05)  # Small delay for processing
+                    transcription = pipeline.get_transcription()
+                    if transcription:
+                        # Clean transcription using official postprocessing
+                        cleaned = clean_transcription(transcription)
+                        if cleaned:
+                            text_chunks.append(cleaned)
+
+                # Combine chunks
+                text = ' '.join(text_chunks)
+                text = normalize_whitespace(text)
+
+            except Exception as e:
+                print(f"\n⚠️  Warning: Hailo inference error: {e}")
+                try:
+                    os.remove(audio_file)
+                    os.remove(proc_file)
+                except:
+                    pass
+                continue
 
             # Validation checks
             if text:
@@ -754,8 +643,12 @@ def run_transcription(config):
         print('='*70)
 
         # Cleanup Hailo resources
-        hailo_model.cleanup()
+        try:
+            pipeline.stop()
+        except:
+            pass
         sys.exit(0)
+
 
 def main():
     """Main entry point"""
@@ -763,14 +656,13 @@ def main():
     # Check if Hailo SDK is available
     if not HAILO_AVAILABLE:
         print("\n" + "="*70)
-        print("  ERROR: Hailo Platform SDK Not Found")
+        print("  ERROR: Hailo Modules Not Found")
         print("="*70)
-        print("\nThe Hailo Platform SDK (PyHailoRT) is required to use this script.")
-        print("\nPlease install:")
-        print("1. HailoRT 4.20+ from Hailo Developer Zone")
-        print("2. PyHailoRT (included with HailoRT)")
-        print("\nVisit: https://hailo.ai/developer-zone/")
-        print("\nFor setup instructions, see: HAILO_SETUP.md")
+        print("\nCould not import Hailo modules.")
+        print("\nPlease ensure you've run setup.py:")
+        print("  cd ~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition")
+        print("  python3 setup.py")
+        print("\nFor detailed instructions, see: HAILO_SETUP.md")
         print("="*70 + "\n")
         sys.exit(1)
 
@@ -780,6 +672,7 @@ def main():
     except KeyboardInterrupt:
         print("\n\nExiting...")
         sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
