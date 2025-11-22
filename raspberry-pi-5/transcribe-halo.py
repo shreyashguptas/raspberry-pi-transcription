@@ -504,46 +504,57 @@ def run_transcription(config):
                 pipeline.stop()
                 sys.exit(1)
 
-            if os.path.getsize(audio_file) == 0:
+            file_size = os.path.getsize(audio_file)
+            if file_size == 0:
                 print(f"\n❌ Error: Audio file is empty: {audio_file}")
                 pipeline.stop()
                 sys.exit(1)
 
-            # Preprocess audio for Hailo
-            try:
-                audio = preprocess_audio_for_hailo(audio_file, config)
-            except Exception as e:
-                print(f"\n❌ Error preprocessing audio: {e}")
-                try:
-                    os.remove(audio_file)
-                except:
-                    pass
-                continue
+            print(f"DEBUG: Recorded audio file size: {file_size} bytes")
 
             total_audio_duration += config.chunk_duration
 
-            # Check audio energy BEFORE transcription
-            if not has_sufficient_audio(audio, config.min_audio_energy):
-                try:
-                    os.remove(audio_file)
-                except:
-                    pass
-                continue
-
-            # Save preprocessed audio to temp file for Hailo
-            proc_file = f'/tmp/proc_{segment_num}.wav'
-            sf.write(proc_file, audio, SAMPLE_RATE)
-
-            # Transcribe using Hailo pipeline
+            # Load and preprocess audio using ONLY Hailo's official pipeline
             try:
-                # Load and preprocess with official Hailo utilities
-                from common.audio_utils import load_audio, pad_or_trim
+                # Import Hailo audio utilities
+                from common.audio_utils import load_audio
                 from common.preprocessing import preprocess
 
-                # Load audio (official loader handles ffmpeg conversion)
-                audio_for_hailo = load_audio(proc_file)
+                # Load audio with Hailo's official loader (handles format conversion)
+                # This function uses ffmpeg internally to resample to 16kHz mono
+                print(f"DEBUG: Loading audio with Hailo's load_audio()...")
+                audio_for_hailo = load_audio(audio_file)
+
+                print(f"DEBUG: Loaded audio shape: {audio_for_hailo.shape}, dtype: {audio_for_hailo.dtype}")
+                print(f"DEBUG: Audio array size: {audio_for_hailo.size} samples")
+
+                if audio_for_hailo.size == 0:
+                    print("\n❌ ERROR: Hailo's load_audio() returned empty array!")
+                    print("This may indicate:")
+                    print("  - ffmpeg is not installed or not working")
+                    print("  - Audio file format is incompatible")
+                    print("  - load_audio() has a bug")
+                    try:
+                        os.remove(audio_file)
+                    except:
+                        pass
+                    continue
+
+                # Apply gain adjustment (after Hailo's normalization)
+                audio_for_hailo = audio_for_hailo * config.gain
+                audio_for_hailo = np.clip(audio_for_hailo, -1.0, 1.0)
+
+                # Check audio energy AFTER loading
+                if not has_sufficient_audio(audio_for_hailo, config.min_audio_energy):
+                    print("DEBUG: Audio energy too low, skipping...")
+                    try:
+                        os.remove(audio_file)
+                    except:
+                        pass
+                    continue
 
                 # Generate mel spectrograms using official preprocessing
+                print(f"DEBUG: Generating mel spectrograms with chunk_length={config.chunk_duration}...")
                 mel_spectrograms = preprocess(
                     audio_for_hailo,
                     is_nhwc=True,  # Hailo expects NHWC format
@@ -551,27 +562,59 @@ def run_transcription(config):
                     chunk_offset=0
                 )
 
+                print(f"DEBUG: Generated {len(mel_spectrograms)} mel spectrogram(s)")
+
+                # Validate mel spectrograms
+                if not mel_spectrograms or len(mel_spectrograms) == 0:
+                    print("\n❌ ERROR: preprocess() returned no mel spectrograms!")
+                    print("This may indicate:")
+                    print("  - Audio duration doesn't match expected chunk_length")
+                    print("  - preprocess() function has a bug or parameter mismatch")
+                    try:
+                        os.remove(audio_file)
+                    except:
+                        pass
+                    continue
+
                 # Process each mel spectrogram chunk
                 text_chunks = []
-                for mel in mel_spectrograms:
-                    pipeline.send_data(mel)
-                    time.sleep(0.05)  # Small delay for processing
-                    transcription = pipeline.get_transcription()
-                    if transcription:
-                        # Clean transcription using official postprocessing
-                        cleaned = clean_transcription(transcription)
-                        if cleaned:
-                            text_chunks.append(cleaned)
+                for i, mel in enumerate(mel_spectrograms):
+                    print(f"DEBUG: Mel {i}: shape={mel.shape}, dtype={mel.dtype}, size={mel.size} bytes")
+
+                    if mel.size == 0:
+                        print(f"\n⚠️  WARNING: Mel {i} is empty, skipping!")
+                        continue
+
+                    # Expected size for tiny-10s model: 320,000 bytes (80 x 1000 x 4)
+                    expected_size = 320000 if config.model_variant == 'tiny' else 160000
+                    if mel.size * mel.itemsize != expected_size:
+                        print(f"\n⚠️  WARNING: Mel size mismatch!")
+                        print(f"   Expected: {expected_size} bytes")
+                        print(f"   Got: {mel.size * mel.itemsize} bytes")
+
+                    try:
+                        pipeline.send_data(mel)
+                        time.sleep(0.05)  # Small delay for processing
+                        transcription = pipeline.get_transcription()
+                        if transcription:
+                            # Clean transcription using official postprocessing
+                            cleaned = clean_transcription(transcription)
+                            if cleaned:
+                                text_chunks.append(cleaned)
+                    except Exception as e:
+                        print(f"\n⚠️  WARNING: Pipeline error for mel {i}: {e}")
+                        continue
 
                 # Combine chunks
                 text = ' '.join(text_chunks)
                 text = normalize_whitespace(text)
 
             except Exception as e:
-                print(f"\n⚠️  Warning: Hailo inference error: {e}")
+                print(f"\n⚠️  Warning: Audio preprocessing/inference error: {e}")
+                import traceback
+                traceback.print_exc()
                 try:
                     os.remove(audio_file)
-                    os.remove(proc_file)
                 except:
                     pass
                 continue
@@ -583,7 +626,6 @@ def run_transcription(config):
                 if word_count < config.min_words:
                     try:
                         os.remove(audio_file)
-                        os.remove(proc_file)
                     except:
                         pass
                     continue
@@ -591,7 +633,6 @@ def run_transcription(config):
                 if is_repetition(text, last_text):
                     try:
                         os.remove(audio_file)
-                        os.remove(proc_file)
                     except:
                         pass
                     continue
@@ -617,7 +658,6 @@ def run_transcription(config):
             # Cleanup
             try:
                 os.remove(audio_file)
-                os.remove(proc_file)
             except:
                 pass
 
