@@ -58,3 +58,8 @@ simple-term-menu>=1.6.1
 #
 # For detailed setup instructions, see: HAILO_SETUP.md
 # ============================================================================
+
+# Hailo runtime dependencies (install in your project venv)
+transformers==4.50.1
+torch==2.6.0
+sounddevice==0.5.1
