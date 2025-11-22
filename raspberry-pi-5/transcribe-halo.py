@@ -907,6 +907,13 @@ def run_transcription(config):
                         mel = np.ascontiguousarray(mel)
                         print(f"DEBUG:   After conversion - C-contiguous: {mel.flags['C_CONTIGUOUS']}")
 
+                    # Fix shape: Model expects 3D (batch, time, features), not 4D NHWC
+                    # Convert (1, 1, 1000, 80) → (1, 1000, 80) by removing dimension at index 1
+                    if mel.ndim == 4 and mel.shape[1] == 1:
+                        print(f"DEBUG: Removing extra dimension from NHWC format...")
+                        mel = mel.squeeze(1)  # Remove dimension at index 1
+                        print(f"DEBUG:   After squeeze - shape: {mel.shape}, nbytes: {mel.nbytes}")
+
                     try:
                         print(f"DEBUG: Sending mel to pipeline (shape={mel.shape}, nbytes={mel.nbytes})...")
                         pipeline.send_data(mel)
