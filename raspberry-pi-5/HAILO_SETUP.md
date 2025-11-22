@@ -2,6 +2,19 @@
 
 This guide will help you set up the Hailo AI HAT for hardware-accelerated Whisper transcription on your Raspberry Pi 5.
 
+## 🚨 TROUBLESHOOTING "Unable to locate package hailo-all"?
+
+**Run this diagnostic script immediately:**
+
+```bash
+cd ~/sbc-audio-transcription/raspberry-pi-5
+./check_hailo_requirements.sh
+```
+
+This will identify exactly what's wrong and give you specific fix instructions.
+
+---
+
 ## Table of Contents
 
 1. [Hardware Requirements](#hardware-requirements)
@@ -84,22 +97,90 @@ sudo apt install -y \
 
 HailoRT is the runtime software required to communicate with the Hailo AI accelerator.
 
-### Option 1: Using hailo-all Package (Recommended for Raspberry Pi 5)
+**IMPORTANT NOTE (2025):** The old installation method using `hailo-ai.github.io` repository is obsolete and will return 404 errors. All Hailo packages are now included in the standard Raspberry Pi repository.
 
-The easiest way to install HailoRT on Raspberry Pi 5:
+### Pre-Installation Diagnostic (RECOMMENDED)
+
+**Run this diagnostic script first to check if your system is compatible:**
 
 ```bash
-# Add Hailo's package repository
-sudo wget -O /etc/apt/sources.list.d/hailo.list \
-    https://hailo-ai.github.io/hailo-packages/hailo.list
+cd ~/sbc-audio-transcription/raspberry-pi-5
+chmod +x check_hailo_requirements.sh
+./check_hailo_requirements.sh
+```
 
-# Add Hailo's GPG key
-wget -qO - https://hailo-ai.github.io/hailo-packages/hailo.gpg.key | \
-    sudo apt-key add -
+This will check:
+- ✅ OS version (must be Raspberry Pi OS Bookworm 64-bit)
+- ✅ Architecture (must be aarch64)
+- ✅ Kernel version (>= 6.6.31)
+- ✅ Repository configuration
+- ✅ Package availability
+- ✅ Hardware detection
+- ✅ Existing installation status
 
-# Update package list
+The script will give you specific instructions based on your system configuration.
+
+---
+
+### Quick Start (TL;DR)
+
+**BEFORE installing, run these diagnostic commands to check your system:**
+
+```bash
+# Check OS version (MUST be Raspberry Pi OS Bookworm 64-bit)
+cat /etc/os-release
+
+# Check architecture (MUST be aarch64)
+uname -m
+
+# Check repository configuration
+cat /etc/apt/sources.list.d/raspi.list
+```
+
+**Expected output:**
+- OS: `VERSION_CODENAME=bookworm` and `Debian GNU/Linux 12`
+- Architecture: `aarch64`
+- Repository: `deb http://archive.raspberrypi.com/debian/ bookworm main`
+
+**If all checks pass, install:**
+
+```bash
 sudo apt update
+sudo apt full-upgrade -y
+sudo reboot
+```
 
+After reboot:
+
+```bash
+sudo apt install -y hailo-all
+sudo reboot
+```
+
+**If you get "Unable to locate package hailo-all"**, see [Troubleshooting](#troubleshooting) section below.
+
+---
+
+### Option 1: Using hailo-all Package (Recommended for Raspberry Pi 5)
+
+The easiest way to install HailoRT on Raspberry Pi 5. As of 2025, Hailo packages are included in the standard Raspberry Pi repository - no special configuration needed!
+
+**Prerequisites:**
+- 64-bit Raspberry Pi OS Bookworm (FULL version, not lite)
+- Kernel version > 6.6.31
+
+```bash
+# Update your system first
+sudo apt update
+sudo apt full-upgrade -y
+
+# Reboot after upgrade
+sudo reboot
+```
+
+After reboot:
+
+```bash
 # Install hailo-all package (includes HailoRT, drivers, and PyHailoRT)
 sudo apt install -y hailo-all
 
@@ -107,77 +188,102 @@ sudo apt install -y hailo-all
 sudo reboot
 ```
 
-### Option 2: Manual Installation from Hailo Developer Zone
+**What gets installed:**
+- HailoRT 4.20.0+ (runtime library)
+- hailo-dkms (kernel driver)
+- python3-hailort (Python bindings)
+- hailo-tappas-core (processing libraries)
+- All required dependencies
 
-If the `hailo-all` package method doesn't work:
+### Option 2: Manual Installation from Raspberry Pi Archive
+
+If the `hailo-all` package method doesn't work, you can download and install manually:
+
+**Download directly from Raspberry Pi archive:**
+
+```bash
+# Download the latest hailo-all package
+wget http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/hailo-all_4.20.0_all.deb
+
+# Install it
+sudo apt install -y ./hailo-all_4.20.0_all.deb
+
+# Reboot to load kernel modules
+sudo reboot
+```
+
+**Verify Installation:**
+
+```bash
+hailortcli fw-control identify
+```
+
+Expected output:
+```
+Executing on device: 0000:01:00.0
+Identifying board
+Control Protocol Version: 2
+Firmware Version: 4.XX.X (release)
+Logger Version: 0
+Board Name: Hailo-8
+Device Architecture: HAILO8L
+```
+
+### Option 3: Installation from Hailo Developer Zone
+
+For the absolute latest versions or if you need specific builds:
 
 1. **Register for Hailo Developer Zone:**
-   - Visit: https://hailo.ai/developer-zone/
+   - Visit: https://hailo.ai/developer-zone/request-access/
    - Create a free account
    - Accept the terms and conditions
 
 2. **Download HailoRT:**
-   - Navigate to: Software → HailoRT
-   - Download: **HailoRT 4.20+** (latest stable version)
-   - Choose: **Linux ARM64** (for Raspberry Pi 5)
-   - Download both:
-     - `hailort-X.XX.X-Linux.deb` (main package)
-     - `hailort-pcie-driver-X.XX.X.deb` (PCIe driver)
+   - Login at: https://hailo.ai/developer-zone/software-downloads/
+   - Navigate to: Product: Accelerators → Sub-package: HailoRT → OS: Linux
+   - Download: **HailoRT 4.20+** for ARM64
+   - Download the .deb package for your architecture
 
 3. **Install HailoRT:**
    ```bash
-   # Install the PCIe driver first
-   sudo dpkg -i hailort-pcie-driver-*.deb
-
-   # Install HailoRT
-   sudo dpkg -i hailort-*.deb
-
-   # Fix any dependency issues
-   sudo apt-get install -f
-
-   # Reboot to load the driver
+   sudo apt install -y ./hailort_*.deb
    sudo reboot
-   ```
-
-4. **Verify Installation:**
-   ```bash
-   hailortcli fw-control identify
-   ```
-
-   Expected output:
-   ```
-   Executing on device: 0000:01:00.0
-   Identifying board
-   Control Protocol Version: 2
-   Firmware Version: 4.XX.X (release)
-   Logger Version: 0
-   Board Name: Hailo-8
-   Device Architecture: HAILO8L
    ```
 
 ### Installing PyHailoRT
 
 PyHailoRT is the Python interface to HailoRT.
 
-**If you installed `hailo-all`:**
-- PyHailoRT is already installed system-wide
-- Your virtual environment will inherit it automatically
-- No additional installation needed!
+**If you installed `hailo-all` (Option 1 or 2):**
+- ✅ PyHailoRT (`python3-hailort`) is already installed system-wide as part of the package
+- ✅ Your virtual environment will automatically inherit it if created with `--system-site-packages`
+- ✅ No additional installation needed!
 
-**If you installed manually:**
-- Download the PyHailoRT wheel from Hailo Developer Zone:
-  - Software → HailoRT → Python Wheels
-  - Download: `hailort-X.XX.X-cpXX-cpXX-linux_aarch64.whl`
-  - Match the version to your HailoRT version
+**Verify it's installed:**
+```bash
+dpkg -l | grep python3-hailort
+```
 
-- Install in your virtual environment:
-  ```bash
-  # Activate your virtual environment
-  source ~/sbc-audio-transcription/raspberry-pi-5/venv/bin/activate
+**Creating virtual environment with system packages access:**
+```bash
+cd ~/sbc-audio-transcription/raspberry-pi-5
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+python3 -c "from hailo_platform import HEF, VDevice; print('PyHailoRT available!')"
+```
 
-  # Install the wheel
-  pip install hailort-X.XX.X-cpXX-cpXX-linux_aarch64.whl
-  ```
+**If you need to reinstall your venv with system packages:**
+```bash
+# Remove old venv
+rm -rf venv
+
+# Create new venv with system site packages
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+
+# Reinstall project dependencies
+pip install -r requirements.txt
+```
 
 ---
 
@@ -369,6 +475,125 @@ Hello, this is a test of the Hailo AI transcription system...
 
 ## Troubleshooting
 
+### Issue: "Unable to locate package hailo-all"
+
+**This is the most common issue.** Follow these steps in order:
+
+#### Step 1: Check Your System
+
+```bash
+# Check OS version
+cat /etc/os-release
+
+# Check architecture
+uname -m
+
+# Check kernel version
+uname -r
+```
+
+**Required:**
+- OS: Raspberry Pi OS Bookworm (Debian 12) - 64-bit
+- Architecture: `aarch64` (NOT `armv7l`)
+- Kernel: >= 6.6.31
+
+**If you have 32-bit OS (`armv7l`):** You MUST reinstall with 64-bit Raspberry Pi OS. Hailo requires 64-bit.
+
+**If you have Ubuntu or other OS:** Install Raspberry Pi OS Bookworm 64-bit instead.
+
+#### Step 2: Check Available Packages
+
+```bash
+# Search for hailo packages in your repositories
+apt-cache search hailo
+
+# Check if repository is accessible
+curl -I http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/
+```
+
+**If no hailo packages found:** Your repositories aren't configured correctly. Continue to Step 3.
+
+#### Step 3: Fix Repository Configuration
+
+```bash
+# Check current repository configuration
+cat /etc/apt/sources.list.d/raspi.list
+
+# If file doesn't exist or is incorrect, create it:
+echo "deb http://archive.raspberrypi.com/debian/ bookworm main" | sudo tee /etc/apt/sources.list.d/raspi.list
+
+# Update package lists
+sudo apt update
+
+# Try searching again
+apt-cache search hailo
+```
+
+#### Step 4: Manual Installation (If Package Still Not Found)
+
+If the package is truly not available in your repositories, download and install manually:
+
+```bash
+# Download the hailo-all package directly
+wget http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/hailo-all_4.20.0_all.deb
+
+# Check if download succeeded
+ls -lh hailo-all_4.20.0_all.deb
+
+# Install it
+sudo apt install -y ./hailo-all_4.20.0_all.deb
+
+# Reboot
+sudo reboot
+```
+
+**If wget fails (404 error):** The version might be different. Check available versions:
+
+```bash
+# List available versions
+curl http://archive.raspberrypi.com/debian/pool/main/h/hailo-all/ 2>/dev/null | grep -o 'hailo-all_[0-9.]*_all.deb' | sort -V | tail -5
+```
+
+#### Step 5: Alternative - Install Core Components Separately
+
+If `hailo-all` metapackage isn't available, install components individually:
+
+```bash
+# Search for individual hailo packages
+apt-cache search hailort
+
+# Install core components
+sudo apt install -y hailort python3-hailort hailo-dkms
+
+# Reboot
+sudo reboot
+```
+
+#### Step 6: Check Raspberry Pi OS Version
+
+```bash
+# Check exact Raspberry Pi OS version
+cat /etc/rpi-issue
+```
+
+**If you're on an older Raspberry Pi OS:**
+- Consider updating to the latest Raspberry Pi OS Bookworm
+- Backup your data first
+- Download from: https://www.raspberrypi.com/software/operating-systems/
+
+#### Step 7: Last Resort - Hailo Developer Zone
+
+If all else fails, register and download from Hailo directly:
+
+1. Visit: https://hailo.ai/developer-zone/request-access/
+2. Register (free)
+3. Download HailoRT .deb for ARM64
+4. Install manually:
+   ```bash
+   sudo apt install -y ./hailort_*.deb
+   sudo reboot
+   ```
+
 ### Issue: "Hailo Platform SDK Not Found"
 
 **Cause:** PyHailoRT is not installed or not accessible.
@@ -381,15 +606,16 @@ Hello, this is a test of the Hailo AI transcription system...
    source venv/bin/activate
    ```
 
-2. Install PyHailoRT wheel manually:
+2. Verify python3-hailort is installed:
    ```bash
-   pip install /path/to/hailort-X.XX.X-cpXX-cpXX-linux_aarch64.whl
+   dpkg -l | grep hailort
    ```
 
 3. Check installation:
    ```bash
    python3 -c "import hailo_platform; print(hailo_platform.__file__)"
    ```
+   Should output something like: `/usr/lib/python3/dist-packages/hailo_platform/__init__.py`
 
 ### Issue: "HEF file not found"
 
