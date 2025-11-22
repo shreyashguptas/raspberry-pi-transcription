@@ -383,8 +383,8 @@ python3 setup.py
 3. Downloads HEF model files (~400MB total):
    - Tiny model encoder + decoder (for Hailo-8L)
    - Base model encoder + decoder (for Hailo-8L)
-   - Files stored in `hefs/h8l/` directory
-4. Downloads tokenization assets (~180MB)
+   - Files stored in `app/hefs/h8l/` directory
+4. Downloads tokenization assets (~180MB) to `app/decoder_assets/`
 
 **Time required:** 5-15 minutes depending on internet speed
 
@@ -393,8 +393,8 @@ python3 setup.py
 ### Verify Setup
 
 ```bash
-# Check HEF files were downloaded
-ls ~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition/hefs/h8l/
+# Check HEF files were downloaded (note the app/ directory)
+ls ~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition/app/hefs/h8l/
 
 # Expected structure:
 # base/
@@ -403,6 +403,9 @@ ls ~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition/h
 # tiny/
 #   tiny-whisper-encoder-10s_15dB_h8l.hef
 #   tiny-whisper-decoder-fixed-sequence-matmul-split_h8l.hef
+
+# Or find them with:
+find ~/Hailo-Application-Code-Examples -name "*.hef" -type f | head -5
 ```
 
 ---
@@ -790,8 +793,8 @@ sudo reboot
 | **Hailo repo** | `~/Hailo-Application-Code-Examples/` |
 | **Whisper code** | `~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition/` |
 | **Hailo's venv** | `~/Hailo-Application-Code-Examples/.../whisper_env/` (separate from yours) |
-| **HEF models** | `~/Hailo-Application-Code-Examples/.../hefs/h8l/base/` |
-| **Tokenization assets** | `~/Hailo-Application-Code-Examples/.../decoder_assets/base/` |
+| **HEF models** | `~/Hailo-Application-Code-Examples/.../app/hefs/h8l/base/` |
+| **Tokenization assets** | `~/Hailo-Application-Code-Examples/.../app/decoder_assets/base/` |
 
 ---
 
