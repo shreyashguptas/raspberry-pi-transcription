@@ -870,6 +870,18 @@ def run_transcription(config):
 
                 print(f"DEBUG: Generated {len(mel_spectrograms)} mel spectrogram(s)")
 
+                # Convert PyTorch tensors to numpy arrays if necessary
+                converted_mels = []
+                for i, mel in enumerate(mel_spectrograms):
+                    # Check if it's a PyTorch tensor and convert to numpy
+                    if hasattr(mel, 'detach'):  # It's a PyTorch tensor
+                        print(f"DEBUG: Converting PyTorch tensor {i} to numpy array")
+                        mel_np = mel.detach().cpu().numpy()
+                    else:
+                        mel_np = mel
+                    converted_mels.append(mel_np)
+                mel_spectrograms = converted_mels
+
                 # Validate mel spectrograms
                 if not mel_spectrograms or len(mel_spectrograms) == 0:
                     print("\n❌ ERROR: preprocess() returned no mel spectrograms!")
@@ -885,10 +897,11 @@ def run_transcription(config):
                 # Process each mel spectrogram chunk
                 text_chunks = []
                 for i, mel in enumerate(mel_spectrograms):
-                    print(f"DEBUG: Mel {i}: shape={mel.shape}, dtype={mel.dtype}")
+                    print(f"DEBUG: Mel {i}: type={type(mel)}, shape={mel.shape}, dtype={mel.dtype}")
                     print(f"DEBUG:   Elements: {mel.size}, Bytes: {mel.nbytes}")
                     print(f"DEBUG:   C-contiguous: {mel.flags['C_CONTIGUOUS']}, F-contiguous: {mel.flags['F_CONTIGUOUS']}")
                     print(f"DEBUG:   Memory layout: {mel.flags}")
+                    print(f"DEBUG:   Is numpy array: {isinstance(mel, np.ndarray)}")
 
                     if mel.size == 0:
                         print(f"\n⚠️  WARNING: Mel {i} is empty, skipping!")
@@ -905,14 +918,18 @@ def run_transcription(config):
                     # The encoder expects (batch=1, height=1, width=1000, channels=80) format
                     # DO NOT squeeze dimensions - Hailo needs the full 4D tensor
 
-                    # CRITICAL: Ensure C-contiguous layout (matches official Hailo pipeline)
-                    # ascontiguousarray creates a copy only if needed
+                    # CRITICAL: Ensure proper numpy array with C-contiguous layout
+                    # First ensure it's a numpy array, then make it C-contiguous
+                    if not isinstance(mel, np.ndarray):
+                        print(f"DEBUG: Converting to numpy array from {type(mel)}")
+                        mel = np.array(mel)
+
                     print(f"DEBUG: Before ascontiguousarray - C-contig: {mel.flags['C_CONTIGUOUS']}, OWNDATA: {mel.flags['OWNDATA']}")
-                    mel = np.ascontiguousarray(mel)
+                    mel = np.ascontiguousarray(mel, dtype=np.float32)  # Ensure float32 dtype
                     print(f"DEBUG: After ascontiguousarray - C-contig: {mel.flags['C_CONTIGUOUS']}, OWNDATA: {mel.flags['OWNDATA']}")
 
                     try:
-                        print(f"DEBUG: Final mel - shape: {mel.shape}, dtype: {mel.dtype}, nbytes: {mel.nbytes}")
+                        print(f"DEBUG: Final mel - type: {type(mel)}, shape: {mel.shape}, dtype: {mel.dtype}, nbytes: {mel.nbytes}")
                         pipeline.send_data(mel)
                         time.sleep(0.1)  # Match official app delay
                         transcription = pipeline.get_transcription()
