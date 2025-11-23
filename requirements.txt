@@ -1,24 +1,25 @@
 # Hailo Whisper Transcription - Official Dependencies
 # Python 3.11 required for Hailo compatibility
 #
-# IMPORTANT: PyTorch 2.6.0 is required - this matches the official Hailo setup
+# CRITICAL: NumPy 1.24.2 required for Hailo C++ bindings compatibility!
+# NumPy 2.x has breaking changes to C API that cause "buffer size 0" errors
 # Use venv with --system-site-packages to access hailo_platform bindings
 
 # PyTorch (required by common.audio_utils from Hailo examples)
 torch==2.6.0
 
-# Core numerical computing
-numpy>=2.0.0,<3.0.0
+# Core numerical computing - MUST be 1.24.2 for Hailo compatibility!
+numpy==1.24.2
 
 # Audio processing
 soundfile>=0.12.0
-scipy>=1.11.0
+scipy==1.9.3
 
 # Terminal UI
 simple-term-menu>=1.6.0
 
 # Transformers (for Whisper tokenization)
-transformers>=4.50.0,<5.0.0
+transformers==4.50.1
 
 # Transformers dependencies (minimal set)
 packaging>=20.0
