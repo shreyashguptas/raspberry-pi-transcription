@@ -22,7 +22,7 @@ try:
     from app.hailo_whisper_pipeline import HailoWhisperPipeline
     from common.audio_utils import load_audio
     from common.preprocessing import preprocess
-    from common.text import postprocess_text
+    from common.postprocessing import clean_transcription as postprocess_text
 except ImportError as e:
     print(f"❌ Error importing Hailo modules: {e}")
     print("\nPlease ensure you've run setup.py in the Hailo repository:")
@@ -96,17 +96,12 @@ def record_audio(duration=10):
         print(f"Recording error: {e}")
         return None
 
-def clean_transcription(text):
-    """Clean and format transcription text"""
+def format_transcription(text):
+    """Format transcription text"""
     if not text:
         return ""
 
-    # Remove special tokens
-    text = text.replace("<|transcribe|>", "")
-    text = text.replace("<|notimestamps|>", "")
-    text = text.replace("<|endoftext|>", "")
-
-    # Apply postprocessing
+    # Apply Hailo's postprocessing
     text = postprocess_text(text)
 
     # Clean up whitespace
@@ -234,7 +229,7 @@ def main():
                 transcription = pipeline.get_transcription()
 
                 if transcription:
-                    text = clean_transcription(transcription)
+                    text = format_transcription(transcription)
                     if text:
                         print(f"\n📝 Transcription: {text}")
 
