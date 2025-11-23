@@ -217,8 +217,12 @@ def main():
 
             # Process through pipeline
             for mel in mel_spectrograms:
+                # Squeeze out extra dimension (from 4D to 3D)
+                # mel shape changes from (1, 1, 1000, 80) to (1, 1000, 80)
+                mel_3d = np.squeeze(mel, axis=1)
+
                 # Send to pipeline
-                pipeline.send_data(mel)
+                pipeline.send_data(mel_3d)
 
                 # Small delay as in official example
                 time.sleep(0.1)
