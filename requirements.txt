@@ -1,0 +1,33 @@
+# Hailo Whisper Transcription - Clean Dependencies
+# Python 3.11 required for Hailo compatibility
+#
+# IMPORTANT: Do NOT install PyTorch or TensorFlow in this environment!
+# They cause conflicts with Hailo's Python bindings (buffer size 0 error)
+
+# Core numerical computing
+numpy>=2.0.0,<3.0.0
+
+# Audio processing
+soundfile>=0.12.0
+scipy>=1.11.0
+
+# Terminal UI
+simple-term-menu>=1.6.0
+
+# Transformers (for Whisper tokenization)
+# Install with minimal dependencies to avoid PyTorch
+transformers>=4.50.0,<5.0.0
+
+# Transformers dependencies (minimal set)
+packaging>=20.0
+pyyaml>=5.1
+regex>=2019.12.18
+tokenizers>=0.21.0,<0.22.0
+safetensors>=0.4.0
+tqdm>=4.27
+huggingface-hub>=0.34.0,<1.0.0
+filelock>=3.0.0
+requests>=2.28.0
+fsspec>=2023.5.0
+hf-xet>=1.1.0
+typing-extensions>=4.5.0

@@ -1,8 +1,48 @@
+# Python
 __pycache__/
-*.pyc
-__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
 
+# Virtual Environments
+venv/
+venv_*/
+ENV/
+env/
+.venv
+
+# Audio files
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# Logs
+*.log
+hailort.log
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-*.Claude.md
-Claude.md
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files
+test-*.wav
+debug-*.wav
+/tmp/
+
+# Old directories (to be removed)
+raspberry-pi-5/
+uno-q/
