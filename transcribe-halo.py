@@ -42,8 +42,8 @@ class Config:
     channels = 2
     chunk_duration = 10 if model_variant == 'tiny' else 5
 
-    # Paths
-    hef_dir = os.path.join(hailo_path, 'app', 'hefs', hw_arch)
+    # Paths (h8l is the directory name for hailo8l)
+    hef_dir = os.path.join(hailo_path, 'app', 'hefs', 'h8l')
     decoder_dir = os.path.join(hailo_path, 'app', 'decoder_assets')
 
 # Global variable for clean shutdown
@@ -149,12 +149,12 @@ def main():
     # Initialize pipeline
     print("\nInitializing Hailo pipeline...")
     try:
-        # Construct HEF paths
-        encoder_hef = f"{Config.model_variant}-whisper-encoder-{Config.chunk_duration}s_15dB_{Config.hw_arch}.hef"
-        decoder_hef = f"{Config.model_variant}-whisper-decoder-fixed-sequence-matmul-split_{Config.hw_arch}.hef"
+        # Construct HEF paths (files are in model-specific subdirectories)
+        encoder_hef = f"{Config.model_variant}-whisper-encoder-{Config.chunk_duration}s_15dB_h8l.hef"
+        decoder_hef = f"{Config.model_variant}-whisper-decoder-fixed-sequence-matmul-split_h8l.hef"
 
-        encoder_path = os.path.join(Config.hef_dir, encoder_hef)
-        decoder_path = os.path.join(Config.hef_dir, decoder_hef)
+        encoder_path = os.path.join(Config.hef_dir, Config.model_variant, encoder_hef)
+        decoder_path = os.path.join(Config.hef_dir, Config.model_variant, decoder_hef)
 
         # Verify files exist
         if not os.path.exists(encoder_path):
