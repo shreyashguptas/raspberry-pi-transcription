@@ -1,1 +1,6 @@
 - For this project specifically if we want to test how the audio recording happens and play it back because the Raspberry Pi does not have a speaker or no speaker is connected to it. What we can do is wherever we save the audio file on the Raspberry Pi, give me a next command that copies the file or a command that I can run myself on my Mac that will copy a file from the Raspberry Pi, that audio file, onto my MacBook at this location '/Users/shreyashgupta/Desktop/pi-audio-test' on my mac.
+- You can SSH into the Raspberry Pi to run any commands and check where things are installed or saved and how the config files are to get additional context at this command 'ssh shreyash@pi-5-1'. But always create and make changes to files on my local Mac. The SSH to the Raspberry Pi should only be used to get additional context of how things are working on the device.
+- You can SSH into the Raspberry Pi to run any commands and check where things are installed or saved and how the config
+ files are to get additional context at this command 'ssh shreyash@pi-5-1'. But always create and make changes to files
+ on my local Mac. The SSH to the Raspberry Pi should only be used to get additional context of how things are working
+on the device.

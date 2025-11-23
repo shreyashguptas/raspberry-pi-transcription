@@ -162,11 +162,14 @@ cd sbc-audio-transcription
 
 ### Step 7: Create Virtual Environment
 
-⚠️ **CRITICAL:** Do NOT install PyTorch or TensorFlow in this environment! They cause buffer conflicts with Hailo Python bindings.
+⚠️ **REQUIRED:** Use `--system-site-packages` flag to access system-installed Hailo packages (`hailo_platform`). This is the official Hailo standard for Raspberry Pi 5.
+
+⚠️ **NOTE:** PyTorch 2.6.0 is required and included in `requirements.txt`. This matches the official Hailo speech recognition setup.
 
 ```bash
-# Create clean Python 3.11 virtual environment
-python3 -m venv venv
+# Create Python 3.11 virtual environment with system site packages
+# This allows access to HailoRT Python bindings installed via apt
+python3 -m venv --system-site-packages venv
 
 # Activate it
 source venv/bin/activate
@@ -174,7 +177,7 @@ source venv/bin/activate
 # Upgrade pip
 pip install --upgrade pip
 
-# Install dependencies (NO PyTorch/TensorFlow!)
+# Install dependencies (includes PyTorch 2.6.0)
 pip install -r requirements.txt
 ```
 
@@ -239,19 +242,50 @@ class HailoTranscriptionConfig:
 
 ### Issue: "Input buffer size 0" Error
 
-**Cause:** PyTorch or TensorFlow installed in virtual environment causes conflicts with Hailo Python bindings.
+**Cause:** This error typically occurs when the virtual environment is not set up correctly or when using incompatible PyTorch versions.
 
 **Solution:**
-1. Delete the venv with PyTorch: `rm -rf venv`
-2. Create clean venv: `python3 -m venv venv`
-3. Install ONLY packages from `requirements.txt` (no torch/tensorflow)
+1. Ensure you're using `--system-site-packages` when creating the venv
+2. Use the exact PyTorch version from requirements.txt (2.6.0)
+3. Recreate the environment:
+   ```bash
+   rm -rf venv
+   python3 -m venv --system-site-packages venv
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
 
-**Verify clean environment:**
+**Verify correct setup:**
 ```bash
 source venv/bin/activate
-pip list | grep -E 'torch|tensorflow|keras'
-# Should return NOTHING
+python3 -c "import torch; import hailo_platform; print(f'torch: {torch.__version__}, hailo: OK')"
+# Should print: torch: 2.6.0, hailo: OK
 ```
+
+### Issue: "No module named 'hailo_platform'" Error
+
+**Cause:** Virtual environment was created WITHOUT `--system-site-packages` flag, blocking access to system-installed HailoRT Python bindings.
+
+**Solution:**
+1. Delete the existing venv: `rm -rf venv`
+2. Recreate with system site packages:
+   ```bash
+   cd ~/sbc-audio-transcription
+   python3 -m venv --system-site-packages venv
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+**Verify Hailo access:**
+```bash
+source venv/bin/activate
+python3 -c "import hailo_platform; print('Hailo OK')"
+# Should print: Hailo OK
+```
+
+**Why this flag is needed:** On Raspberry Pi 5, HailoRT is installed system-wide via `sudo apt install hailo-all`. The `--system-site-packages` flag allows the venv to access these system packages while still maintaining isolation for pip-installed packages. This is the official Hailo standard for RPi5.
 
 ### Issue: Audio Recording Fails
 
