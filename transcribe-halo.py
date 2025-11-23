@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Minimal Hailo Whisper Transcription for Raspberry Pi 5 with Hailo-8L
+Interactive Hailo Whisper Transcription for Raspberry Pi 5 with Hailo-8L
 Records audio and performs real-time transcription using hardware acceleration.
 """
 
@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import signal
 import numpy as np
+from simple_term_menu import TerminalMenu
 
 # Add Hailo examples to path
 hailo_path = os.path.expanduser("~/Hailo-Application-Code-Examples/runtime/hailo-8/python/speech_recognition")
@@ -32,19 +33,42 @@ except ImportError as e:
 
 # Configuration
 class Config:
-    # Hailo settings
-    hw_arch = 'hailo8l'
-    model_variant = 'base'  # 'tiny' for 10s chunks, 'base' for 5s chunks (FASTER & MORE REAL-TIME!)
+    def __init__(self):
+        # Hailo settings
+        self.hw_arch = 'hailo8l'
+        self.model_variant = 'base'  # 'tiny' for 10s chunks, 'base' for 5s chunks
 
-    # Audio settings
-    device = 'plughw:0,0'
-    sample_rate = 48000
-    channels = 2
-    chunk_duration = 10 if model_variant == 'tiny' else 5
+        # Audio settings
+        self.device = 'plughw:0,0'
+        self.sample_rate = 48000
+        self.channels = 2
 
-    # Paths (h8l is the directory name for hailo8l)
-    hef_dir = os.path.join(hailo_path, 'app', 'hefs', 'h8l')
-    decoder_dir = os.path.join(hailo_path, 'app', 'decoder_assets')
+        # Paths (h8l is the directory name for hailo8l)
+        self.hef_dir = os.path.join(hailo_path, 'app', 'hefs', 'h8l')
+        self.decoder_dir = os.path.join(hailo_path, 'app', 'decoder_assets')
+
+    @property
+    def chunk_duration(self):
+        return 10 if self.model_variant == 'tiny' else 5
+
+    def display_summary(self):
+        """Display configuration summary"""
+        print('')
+        print('='*70)
+        print('  CONFIGURATION SUMMARY')
+        print('='*70)
+        print('')
+        print('HAILO SETTINGS:')
+        print(f'  Model Variant: {self.model_variant}')
+        print(f'  Hardware: {self.hw_arch} (Hailo-8L)')
+        print(f'  Chunk Duration: {self.chunk_duration}s')
+        print('')
+        print('AUDIO SETTINGS:')
+        print(f'  Device: {self.device}')
+        print(f'  Sample Rate: {self.sample_rate} Hz')
+        print(f'  Channels: {self.channels} (stereo)')
+        print('='*70)
+        print('')
 
 # Global variable for clean shutdown
 running = True
@@ -59,7 +83,7 @@ def signal_handler(signum, frame):
         pipeline.stop()
     sys.exit(0)
 
-def record_audio(duration=10):
+def record_audio(duration=10, device='plughw:0,0', sample_rate=48000, channels=2):
     """Record audio from microphone and save to temp file"""
     # Create temp file for audio
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
@@ -68,10 +92,10 @@ def record_audio(duration=10):
     # Record using arecord
     cmd = [
         'arecord',
-        '-D', Config.device,
+        '-D', device,
         '-f', 'S16_LE',
-        '-r', str(Config.sample_rate),
-        '-c', str(Config.channels),
+        '-r', str(sample_rate),
+        '-c', str(channels),
         '-d', str(duration),
         audio_file
     ]
@@ -109,13 +133,122 @@ def format_transcription(text):
 
     return text.strip()
 
+def show_welcome():
+    """Display welcome screen"""
+    print('')
+    print('='*70)
+    print('  HAILO WHISPER INTERACTIVE TRANSCRIPTION')
+    print('  Hardware-accelerated real-time speech-to-text on Raspberry Pi 5')
+    print('='*70)
+    print('')
+
+def menu_preset(config):
+    """Show preset configuration menu"""
+    options = [
+        "Fastest (tiny model, 10s chunks)",
+        "Balanced (base model, 5s chunks) [Recommended]",
+        "Custom (configure all options)"
+    ]
+
+    menu = TerminalMenu(
+        options,
+        title="Select Configuration Preset:",
+        menu_cursor="→ ",
+        menu_cursor_style=("fg_cyan", "bold"),
+        menu_highlight_style=("bg_cyan", "fg_black")
+    )
+
+    choice = menu.show()
+
+    if choice == 0:  # Fastest
+        config.model_variant = 'tiny'
+        return False  # Skip custom menus
+    elif choice == 1:  # Balanced (default)
+        config.model_variant = 'base'
+        return False
+    else:  # Custom
+        return True
+
+def menu_model_variant(config):
+    """Model variant selection menu"""
+    options = [
+        "tiny (10s chunks, fastest)",
+        "base (5s chunks, better quality) [Recommended]"
+    ]
+
+    variant_map = ['tiny', 'base']
+    current_idx = variant_map.index(config.model_variant) if config.model_variant in variant_map else 1
+
+    menu = TerminalMenu(
+        options,
+        title="Select Hailo Model Variant:",
+        cursor_index=current_idx,
+        menu_cursor="→ ",
+        menu_cursor_style=("fg_cyan", "bold"),
+        menu_highlight_style=("bg_cyan", "fg_black")
+    )
+
+    choice = menu.show()
+    config.model_variant = variant_map[choice]
+
+def menu_audio_device(config):
+    """Audio device selection menu"""
+    # Get available audio devices
+    try:
+        result = subprocess.run(['arecord', '-l'], capture_output=True, text=True)
+        # Parse output for card numbers
+        print("\nAvailable audio devices:")
+        print(result.stdout)
+    except:
+        pass
+
+    options = [
+        f"plughw:0,0 (default) [Current: {config.device}]",
+        "Custom device string"
+    ]
+
+    menu = TerminalMenu(
+        options,
+        title="Select Audio Device:",
+        menu_cursor="→ ",
+        menu_cursor_style=("fg_cyan", "bold"),
+        menu_highlight_style=("bg_cyan", "fg_black")
+    )
+
+    choice = menu.show()
+
+    if choice == 1:  # Custom
+        print("\nEnter custom device string (e.g., plughw:1,0): ", end='')
+        custom_device = input().strip()
+        if custom_device:
+            config.device = custom_device
+
 def main():
     """Main transcription loop"""
     global pipeline
 
+    # Show welcome screen
+    show_welcome()
+
+    # Create config and show menu
+    config = Config()
+
+    # Show preset menu
+    show_custom = menu_preset(config)
+
+    # If custom selected, show detailed menus
+    if show_custom:
+        menu_model_variant(config)
+        menu_audio_device(config)
+
+    # Display configuration summary
+    config.display_summary()
+
+    input("Press Enter to start transcription with these settings...")
+
     print("\n" + "="*60)
-    print("  HAILO WHISPER TRANSCRIPTION (MINIMAL)")
-    print("  Model: {} | Hardware: {}".format(Config.model_variant, Config.hw_arch))
+    print("  HAILO WHISPER TRANSCRIPTION")
+    print("  Model: {} | Hardware: {}".format(config.model_variant, config.hw_arch))
     print("="*60)
 
     # Verify Hailo HAT
@@ -131,14 +264,14 @@ def main():
     # Verify audio device
     print("\nChecking audio device...")
     result = subprocess.run(['arecord', '-l'], capture_output=True, text=True)
-    if Config.device.split(':')[1] not in result.stdout:
+    if config.device.split(':')[1] not in result.stdout:
         print("⚠️  Warning: Audio device may not be available")
     else:
         print("✓ Audio device found")
 
     # Test recording
     print("\nTesting audio recording...")
-    test_file = record_audio(1)
+    test_file = record_audio(1, config.device, config.sample_rate, config.channels)
     if test_file:
         os.remove(test_file)
         print("✓ Audio recording works")
@@ -151,15 +284,15 @@ def main():
     try:
         # Construct HEF paths (files are in model-specific subdirectories)
         # Note: tiny model has "15dB" in name, base model doesn't
-        if Config.model_variant == 'tiny':
-            encoder_hef = f"{Config.model_variant}-whisper-encoder-{Config.chunk_duration}s_15dB_h8l.hef"
+        if config.model_variant == 'tiny':
+            encoder_hef = f"{config.model_variant}-whisper-encoder-{config.chunk_duration}s_15dB_h8l.hef"
         else:  # base model
-            encoder_hef = f"{Config.model_variant}-whisper-encoder-{Config.chunk_duration}s_h8l.hef"
+            encoder_hef = f"{config.model_variant}-whisper-encoder-{config.chunk_duration}s_h8l.hef"
 
-        decoder_hef = f"{Config.model_variant}-whisper-decoder-fixed-sequence-matmul-split_h8l.hef"
+        decoder_hef = f"{config.model_variant}-whisper-decoder-fixed-sequence-matmul-split_h8l.hef"
 
-        encoder_path = os.path.join(Config.hef_dir, Config.model_variant, encoder_hef)
-        decoder_path = os.path.join(Config.hef_dir, Config.model_variant, decoder_hef)
+        encoder_path = os.path.join(config.hef_dir, config.model_variant, encoder_hef)
+        decoder_path = os.path.join(config.hef_dir, config.model_variant, decoder_hef)
 
         # Verify files exist
         if not os.path.exists(encoder_path):
@@ -173,7 +306,7 @@ def main():
         pipeline = HailoWhisperPipeline(
             encoder_model_path=encoder_path,
             decoder_model_path=decoder_path,
-            variant=Config.model_variant,
+            variant=config.model_variant,
             host="arm64"
         )
         print("✓ Pipeline initialized")
@@ -195,9 +328,9 @@ def main():
         recording_num += 1
 
         # Record audio
-        print(f"\n[{recording_num}] Recording {Config.chunk_duration}s...", end='', flush=True)
+        print(f"\n[{recording_num}] Recording {config.chunk_duration}s...", end='', flush=True)
         start_time = time.time()
-        audio_file = record_audio(Config.chunk_duration)
+        audio_file = record_audio(config.chunk_duration, config.device, config.sample_rate, config.channels)
         record_duration = time.time() - start_time
 
         if not audio_file:
@@ -216,7 +349,7 @@ def main():
             mel_spectrograms = preprocess(
                 audio,
                 is_nhwc=True,
-                chunk_length=Config.chunk_duration,
+                chunk_length=config.chunk_duration,
                 chunk_offset=0
             )
 
