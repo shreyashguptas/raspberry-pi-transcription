@@ -220,11 +220,17 @@ def main():
                 print(f"\n[Mel {i+1}] Original shape: {mel.shape}, dtype: {mel.dtype}")
                 print(f"  C-contiguous: {mel.flags['C_CONTIGUOUS']}, Owns data: {mel.flags['OWNDATA']}")
 
-                # CRITICAL: Convert to C-contiguous array that owns its data
-                # This matches what the official pipeline does
+                # CRITICAL FIX: Transpose from (1, 1, 1000, 80) to (1, 1, 80, 1000)
+                # The encoder expects mel bands (80) before time steps (1000)
+                # This matches the official Hailo implementation
+                if mel.shape == (1, 1, 1000, 80):
+                    mel = np.transpose(mel, [0, 1, 3, 2])  # Swap last two dimensions
+                    print(f"  Transposed to: {mel.shape}")
+
+                # Convert to C-contiguous array that owns its data
                 mel_contiguous = np.ascontiguousarray(mel, dtype=np.float32)
 
-                print(f"  After ascontiguousarray: shape: {mel_contiguous.shape}")
+                print(f"  Final shape: {mel_contiguous.shape}")
                 print(f"  C-contiguous: {mel_contiguous.flags['C_CONTIGUOUS']}, Owns data: {mel_contiguous.flags['OWNDATA']}")
 
                 # Send to pipeline
